@@ -103,29 +103,23 @@ def test_epoch(val_loader, model, loss_fn, cuda, metrics):
             metric.reset()
         model.eval()
         val_loss = 0
-        for batch_idx, (data, target) in enumerate(val_loader):
-            target = target if len(target) > 0 else None
+        for batch_idx, data in enumerate(val_loader):
             if not type(data) in (tuple, list):
                 data = (data,)
             if cuda:
                 data = tuple(d.cuda() for d in data)
-                if target is not None:
-                    target = target.cuda()
 
             outputs = model(*data)
 
             if type(outputs) not in (tuple, list):
                 outputs = (outputs,)
             loss_inputs = outputs
-            if target is not None:
-                target = (target,)
-                loss_inputs += target
 
             loss_outputs = loss_fn(*loss_inputs)
             loss = loss_outputs[0] if type(loss_outputs) in (tuple, list) else loss_outputs
             val_loss += loss.item()
 
             for metric in metrics:
-                metric(outputs, target, loss_outputs)
+                metric(outputs, loss_outputs)
 
     return val_loss, metrics

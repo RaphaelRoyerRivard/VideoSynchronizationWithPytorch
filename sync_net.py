@@ -6,7 +6,7 @@ from torch.optim import lr_scheduler
 from torchsummary import summary
 import numpy as np
 from itertools import combinations
-from data_loader import get_dataset
+from data_loader import get_datasets
 from trainer import fit
 from torch.utils.data import DataLoader
 cuda = torch.cuda.is_available()
@@ -68,6 +68,8 @@ class TripletNet(nn.Module):
 
     def forward(self, x):
         # print("TripletNet input", x.shape)
+        if len(x.shape) == 4:
+            return self.embedding_net(x)
         x1 = x[:, 0]
         x2 = x[:, 1]
         x3 = x[:, 2]
@@ -103,7 +105,7 @@ if __name__ == "__main__":
     scheduler = lr_scheduler.StepLR(optimizer, 8, gamma=0.1, last_epoch=-1)
     n_epochs = 20
     log_interval = 100
-    dataset = get_dataset()
+    dataset = get_datasets()
     train_loader = DataLoader(dataset, batch_size=20, shuffle=True, num_workers=4)
     fit(train_loader, None, model, loss_fn, optimizer, scheduler, n_epochs, cuda, log_interval)
 

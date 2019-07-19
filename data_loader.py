@@ -29,10 +29,12 @@ class VideoFrameProvider(object):
         return self.frames[self.current_video_id][frame_id]
 
 
-def get_all_valid_frames_in_path(path):
+def get_all_valid_frames_in_path(base_path, path_to_ignore):
     all_valid_frames = []
     relevant_frames_file_name = "relevant_frames.txt"
-    for path, subfolders, files in os.walk(path):
+    for path, subfolders, files in os.walk(base_path):
+        if path_to_ignore is not None and path_to_ignore in path:
+            continue
         if path.split("\\")[-1] == "seg":
             continue
         if relevant_frames_file_name not in files:
@@ -102,42 +104,42 @@ class TripletSelector:
 #         return torch.LongTensor(np.array(triplets))
 
 
-class AllTripletSelector(TripletSelector):
-    """
-    Returns all possible triplets
-    May be impractical in most cases
-    """
-
-    def __init__(self, path, samples=1, shuffle=True, sequence=1, min_pos_dist=1, max_pos_dist=2, min_neg_dist=3, max_neg_dist=5):
-        super(AllTripletSelector, self).__init__()
-        self.files = get_all_valid_frames_in_path(path)
-        self.video_frame_provider = VideoFrameProvider(images=self.files)
-        self.shuffle = shuffle
-        self.sequence = sequence
-        self.min_pos_dist = min_pos_dist
-        self.max_pos_dist = max_pos_dist
-        self.min_neg_dist = min_neg_dist
-        self.max_neg_dist = max_neg_dist
-        self.samples = samples
-
-    def get_triplets(self, embeddings, labels):
-        triplets = []
-        for video_id in range(self.video_frame_provider.video_count()):
-            self.video_frame_provider.select_video(video_id)
-            video_frame_count = self.video_frame_provider.get_current_video_frame_count()
-            frames = list(range(video_frame_count))[self.sequence-1:-(self.max_neg_dist+1)]
-            for a in frames:
-                for p in range(self.min_pos_dist, self.max_pos_dist+1):
-                    for n in range(self.min_neg_dist, self.max_neg_dist+1):
-                        triplets.append([a, a+p, a+n])  # problem: doesn't take video_id into consideration
-        return np.array(triplets)
+# class AllTripletSelector(TripletSelector):
+#     """
+#     Returns all possible triplets
+#     May be impractical in most cases
+#     """
+#
+#     def __init__(self, path, samples=1, shuffle=True, sequence=1, min_pos_dist=1, max_pos_dist=2, min_neg_dist=3, max_neg_dist=5):
+#         super(AllTripletSelector, self).__init__()
+#         self.files = get_all_valid_frames_in_path(path)
+#         self.video_frame_provider = VideoFrameProvider(images=self.files)
+#         self.shuffle = shuffle
+#         self.sequence = sequence
+#         self.min_pos_dist = min_pos_dist
+#         self.max_pos_dist = max_pos_dist
+#         self.min_neg_dist = min_neg_dist
+#         self.max_neg_dist = max_neg_dist
+#         self.samples = samples
+#
+#     def get_triplets(self, embeddings, labels):
+#         triplets = []
+#         for video_id in range(self.video_frame_provider.video_count()):
+#             self.video_frame_provider.select_video(video_id)
+#             video_frame_count = self.video_frame_provider.get_current_video_frame_count()
+#             frames = list(range(video_frame_count))[self.sequence-1:-(self.max_neg_dist+1)]
+#             for a in frames:
+#                 for p in range(self.min_pos_dist, self.max_pos_dist+1):
+#                     for n in range(self.min_neg_dist, self.max_neg_dist+1):
+#                         triplets.append([a, a+p, a+n])  # problem: doesn't take video_id into consideration
+#         return np.array(triplets)
 
 
 class AngioSequenceTripletDataset(Dataset):
     """
     Yield frame triplets for phase 0
     """
-    def __init__(self, path, samples=1, shuffle=True, sequence=1, min_pos_dist=1, max_pos_dist=2, min_neg_dist=3, max_neg_dist=5):
+    def __init__(self, path, path_to_ignore=None, samples=1, shuffle=True, sequence=1, min_pos_dist=1, max_pos_dist=2, min_neg_dist=3, max_neg_dist=5):
         """Sample most trivial training data for phase 1 (intra-video sampling of consecutive frames)
 
         Args:
@@ -149,7 +151,7 @@ class AngioSequenceTripletDataset(Dataset):
             min_neg_dist (int, optional): min offset between positive, anchor and negative
             max_neg_dist (int, optional): max offset between positive, anchor and negative
         """
-        self.files = get_all_valid_frames_in_path(path)
+        self.files = get_all_valid_frames_in_path(path, path_to_ignore)
         self.video_frame_provider = VideoFrameProvider(images=self.files)
         self.shuffle = shuffle
         self.sequence = sequence
@@ -224,6 +226,28 @@ class AngioSequenceTripletDataset(Dataset):
         #     yield triplet
 
 
+class AngioSequenceTestDataset(Dataset):
+
+    def __init__(self, path):
+        self.files = get_all_valid_frames_in_path(path, None)
+        self.video_frame_provider = VideoFrameProvider(images=self.files)
+        self.sequence_length = 3
+
+    def __len__(self):
+        return self.video_frame_provider.video_count()
+
+    def __getitem__(self, item):
+        self.video_frame_provider.select_video(item)
+        sequences = []
+        frame_count = self.video_frame_provider.get_current_video_frame_count()
+        for i in range(self.sequence_length - 1, frame_count):
+            sequence = []
+            for sequence_index in reversed(range(self.sequence_length)):
+                sequence.append(self.video_frame_provider.get_current_video_frame(i - sequence_index))
+            sequences.append(sequence)
+        return np.array(sequences)
+
+
 # def get_dump_data():
 #     indices = list(range(sequence*3))
 #
@@ -265,26 +289,39 @@ def get_triplets_parameters(path, path_to_ignore):
     }
 
 
-def get_initialized_triplet_selector():
-    params = get_triplets_parameters()
-    return AllTripletSelector(**params)
+# def get_initialized_triplet_selector():
+#     params = get_triplets_parameters()
+#     return AllTripletSelector(**params)
 
 
-def get_dataset(training_path, validation_path):
-    params = get_triplets_parameters()
-    return AngioSequenceTripletDataset(**params)
+def get_datasets(training_path, validation_path):
+    training_params = get_triplets_parameters(training_path, validation_path)
+    validation_params = get_triplets_parameters(validation_path, None)
+    training_set = AngioSequenceTripletDataset(**training_params)
+    validation_set = AngioSequenceTripletDataset(**validation_params)
+    return training_set, validation_set
+
+
+def get_test_set(test_path):
+    return AngioSequenceTestDataset(test_path)
 
 
 if __name__ == '__main__':
-    # triplet_selector = get_initialized_triplet_selector()
-    # all_triplets = triplet_selector.get_triplets(None, None)
-    # print(all_triplets.shape)
+    training_path = r'\\primnis.gi.polymtl.ca\dfs\cheriet\Images\Cardiologie\Angiographie'
+    validation_path = r'\\primnis.gi.polymtl.ca\dfs\cheriet\Images\Cardiologie\Angiographie\KR-11'
 
-    dataset = get_dataset()
-    dataloader = DataLoader(dataset, batch_size=4, shuffle=True, num_workers=4)
+    # training_set, validation_set = get_datasets(training_path, validation_path)
+    # training_dataloader = DataLoader(training_set, batch_size=4, shuffle=True, num_workers=4)
+    # validation_dataloader = DataLoader(training_set, batch_size=4, shuffle=True, num_workers=4)
+    #
+    # for i_batch, sample_batched in enumerate(validation_dataloader):
+    #     print(i_batch, sample_batched.size(), sample_batched.type())
 
-    for i_batch, sample_batched in enumerate(dataloader):
-        print(i_batch, sample_batched.size(), sample_batched.type())
+    test_set = get_test_set(training_path)
+    test_loader = DataLoader(test_set, batch_size=1, shuffle=False, num_workers=1)
+
+    for i, data in enumerate(test_loader):
+        print(i, data.shape)
 
     # while True:
     #     index = np.random.randint(0, len(dataset))

@@ -46,6 +46,9 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
             }
             torch.save(state, save_progress_path + rf"\training_state_{epoch}.pth")
 
+            with open(save_progress_path + "/progress.txt", "a") as progres_file:
+                progres_file.write(message)
+
 
 def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, metrics):
     for metric in metrics:

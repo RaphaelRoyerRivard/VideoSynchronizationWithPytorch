@@ -85,11 +85,21 @@ class TripletNet(nn.Module):
 
 def reset_first_and_last_layers(model):
     # reset the weights of the first convolution layer because our data will have 3 channels, but not RGB
-    conv1 = list(model.children())[0]
-    nn.init.xavier_uniform_(conv1.weight)
+    reset_first_layer(model)
     # reset the weights of the fully connected layer at the end because we want to learn an embedding that is useful to our sequence and not to classify images
-    fc = list(model.children())[-1]
-    nn.init.xavier_uniform_(fc.weight)
+    model.fc = nn.Linear(2048, 16)
+    nn.init.xavier_uniform_(model.fc.weight)
+
+
+def reset_first_layer(model):
+    # reset the weights of the first convolution layer because our data will have 3 channels, but not RGB
+    nn.init.xavier_uniform_(model.conv1.weight)
+
+
+def replace_last_layer(model, out_features):
+    # reset the weights of the fully connected layer at the end because we want to learn an embedding that is useful to our sequence and not to classify images
+    model.fc = nn.Linear(2048, out_features)
+    nn.init.xavier_uniform_(model.fc.weight)
 
 
 if __name__ == "__main__":

@@ -139,27 +139,23 @@ class AngioSequenceTripletDataset(Dataset):
     """
     Yield frame triplets for phase 0
     """
-    def __init__(self, path, path_to_ignore=None, samples=1, shuffle=True, sequence=1, min_pos_dist=1, max_pos_dist=2, min_neg_dist=3, max_neg_dist=5):
+    def __init__(self, path, path_to_ignore, sequence, min_pos_dist, max_pos_dist, min_neg_dist, max_neg_dist):
         """Sample most trivial training data for phase 1 (intra-video sampling of consecutive frames)
 
         Args:
             path (str): path in which we can find sequences of images
-            samples (int, optional): number of samples for each video
-            shuffle (bool, optional): shuffle video list
-            min_pos_dist (int, optional): min offset between positive frames
-            max_pos_dist (int, optional): max offset between positive frames
-            min_neg_dist (int, optional): min offset between positive, anchor and negative
-            max_neg_dist (int, optional): max offset between positive, anchor and negative
+            min_pos_dist (int): min offset between positive frames
+            max_pos_dist (int): max offset between positive frames
+            min_neg_dist (int): min offset between positive, anchor and negative
+            max_neg_dist (int): max offset between positive, anchor and negative
         """
         self.files = get_all_valid_frames_in_path(path, path_to_ignore)
         self.video_frame_provider = VideoFrameProvider(images=self.files)
-        self.shuffle = shuffle
         self.sequence = sequence
         self.min_pos_dist = min_pos_dist
         self.max_pos_dist = max_pos_dist
         self.min_neg_dist = min_neg_dist
         self.max_neg_dist = max_neg_dist
-        self.samples = samples
         self._calc_all_possibilities()
 
     def _calc_all_possibilities(self):
@@ -275,17 +271,13 @@ class AngioSequenceTestDataset(Dataset):
 
 def get_triplets_parameters(path, path_to_ignore):
     return {
-        # 'path': r'\\primnis.gi.polymtl.ca\dfs\cheriet\Images\Cardiologie\Angiographie\AA-4',
-        # 'path': r'\\primnis.gi.polymtl.ca\dfs\cheriet\Images\Cardiologie\Angiographie',
         'path': path,
         'path_to_ignore': path_to_ignore,
-        'samples': 0,
-        'shuffle':True,
         'sequence': 3,
         'min_pos_dist': 1,
         'max_pos_dist': 4,
-        'min_neg_dist': 7,
-        'max_neg_dist': 13
+        'min_neg_dist': 8,
+        'max_neg_dist': 14
     }
 
 
@@ -307,8 +299,8 @@ def get_test_set(test_path):
 
 
 if __name__ == '__main__':
-    training_path = r'\\primnis.gi.polymtl.ca\dfs\cheriet\Images\Cardiologie\Angiographie'
-    validation_path = r'\\primnis.gi.polymtl.ca\dfs\cheriet\Images\Cardiologie\Angiographie\KR-11'
+    training_path = r'C:\Users\root\Data\Angiographie'
+    validation_path = r'C:\Users\root\Data\Angiographie\KR-11'
 
     # training_set, validation_set = get_datasets(training_path, validation_path)
     # training_dataloader = DataLoader(training_set, batch_size=4, shuffle=True, num_workers=4)

@@ -9,7 +9,8 @@ class VideoFrameProvider(object):
     def __init__(self, images):
         self.current_video_id = 0
         self.type = "images"
-        self.frames = images
+        self.frames = [x[0] for x in images]
+        self.hb_frequencies = [x[1] for x in images]
 
     def _get_videos(self):
         return self.frames
@@ -28,6 +29,9 @@ class VideoFrameProvider(object):
         assert 0 <= frame_id < self.get_current_video_frame_count(), "'frame_id' is out of bounds"
         return self.frames[self.current_video_id][frame_id]
 
+    def get_current_video_heartbeat_frequency(self):
+        return self.hb_frequencies[self.current_video_id]
+
 
 def get_all_valid_frames_in_path(base_path, path_to_ignore):
     all_valid_frames = []
@@ -43,9 +47,10 @@ def get_all_valid_frames_in_path(base_path, path_to_ignore):
         rfile = open(path + "/" + relevant_frames_file_name, "r")
         line = rfile.readline()
         rfile.close()
-        frames = line.split(';')
-        first_frame = int(frames[0])
-        last_frame = int(frames[1])
+        info = line.split(';')
+        first_frame = int(info[0])
+        last_frame = int(info[1])
+        freq = int(info[2])
         for filename in files:
             if not bool(re.search('.*Frame[0-9]+\.jpg', filename)):
                 continue
@@ -56,7 +61,7 @@ def get_all_valid_frames_in_path(base_path, path_to_ignore):
                 img = img.astype(np.float32)
                 img /= 255
                 valid_frames.append(img)
-        all_valid_frames.append(valid_frames)
+        all_valid_frames.append((valid_frames, freq))
         print(len(valid_frames), "valid frames in", path)
     return all_valid_frames
 
@@ -152,10 +157,10 @@ class AngioSequenceTripletDataset(Dataset):
         self.files = get_all_valid_frames_in_path(path, path_to_ignore)
         self.video_frame_provider = VideoFrameProvider(images=self.files)
         self.sequence = sequence
-        self.min_pos_dist = min_pos_dist
-        self.max_pos_dist = max_pos_dist
-        self.min_neg_dist = min_neg_dist
-        self.max_neg_dist = max_neg_dist
+        # self.min_pos_dist = min_pos_dist
+        # self.max_pos_dist = max_pos_dist
+        # self.min_neg_dist = min_neg_dist
+        # self.max_neg_dist = max_neg_dist
         self._calc_all_possibilities()
 
     def _calc_all_possibilities(self):
@@ -167,11 +172,16 @@ class AngioSequenceTripletDataset(Dataset):
             video_triplets = []
             self.video_frame_provider.select_video(video_id)
             video_frame_count = self.video_frame_provider.get_current_video_frame_count()
-            frames = list(range(video_frame_count))[self.sequence-1:-self.max_neg_dist]
-            print(f"Video {video_id} has {video_frame_count} frames and {len(frames)} anchors from {frames[0]} to {frames[-1]}")
+            hb_freq = self.video_frame_provider.get_current_video_heartbeat_frequency()
+            min_pos_dist = 1
+            max_pos_dist = int(hb_freq / 4)
+            min_neg_dist = int(hb_freq * 3 / 4)
+            max_neg_dist = int(hb_freq * 5 / 4)
+            frames = list(range(video_frame_count))[self.sequence-1:-max_neg_dist]
+            print(f"Video {video_id} has {video_frame_count} frames and {len(frames)} anchors from {frames[0]} to {frames[-1]} @{hb_freq} f/hb")
             for a in frames:
-                for p in range(self.min_pos_dist, self.max_pos_dist+1):
-                    for n in range(self.min_neg_dist, self.max_neg_dist+1):
+                for p in range(min_pos_dist, max_pos_dist+1):
+                    for n in range(min_neg_dist, max_neg_dist+1):
                         video_triplets.append([a, a+p, a+n])
                         self.triplet_video_indices.append(video_id)
             previous_count = 0 if video_id == 0 else self.triplet_video_offset[-1] + len(self.triplets[-1])

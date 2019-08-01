@@ -19,6 +19,8 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
         print("Starting Epoch", epoch)
         scheduler.step()
 
+        fc_weights = model.module.embedding_net.fc.weight.cpu().data.numpy()
+
         # Train stage
         train_loss, metrics = train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, metrics)
 
@@ -35,6 +37,12 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
             for metric in metrics:
                 message += '\t{}: {}'.format(metric.name(), metric.value())
 
+        new_fc_weights = model.module.embedding_net.fc.weight.cpu().data.numpy()
+        fc_diff = np.abs(new_fc_weights - fc_weights).sum()
+        fc_average = np.abs(new_fc_weights).mean()
+        fc_total = np.abs(new_fc_weights).sum()
+        message += f'\tFCWeights (Diff, Avg, Total): ({fc_diff}, {fc_average}, {fc_total})'
+
         print(message)
 
         if save_progress_path is not None:
@@ -47,7 +55,7 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
             torch.save(state, save_progress_path + rf"\training_state_{epoch}.pth")
 
             with open(save_progress_path + "/progress.txt", "a") as progres_file:
-                progres_file.write(message)
+                progres_file.write(message + "\n\n")
 
 
 def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, metrics):
@@ -64,8 +72,18 @@ def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, met
         # print("batch_idx", batch_idx, "data", data.shape, data.type())
         if not type(data) in (tuple, list):
             data = (data,)
+        elif len(data) == 3:  # (triplet, batch, channels, width, height)
+            # We want (batch, triplet, channels, width, height)
+            data = torch.stack(data)
+            data = data.permute(1, 0, *list(range(2, len(data.shape))))
+            channels = data.shape[2]
+            if channels == 1:
+                data = data.repeat(1, 1, 3, 1, 1)
+            data = (data,)
         if cuda:
             data = tuple(d.cuda() for d in data)
+
+        fc_weights = model.module.embedding_net.fc.weight.cpu().data.numpy()
 
         optimizer.zero_grad()
         outputs = model(*data)
@@ -92,6 +110,12 @@ def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, met
                 100. * batch_idx / len(train_loader), np.mean(losses), str(timedelta(seconds=elapsed_time)))
             for metric in metrics:
                 message += '\t{}: {}'.format(metric.name(), metric.value())
+
+            new_fc_weights = model.module.embedding_net.fc.weight.cpu().data.numpy()
+            fc_diff = np.abs(new_fc_weights - fc_weights).sum()
+            fc_average = np.abs(new_fc_weights).mean()
+            fc_total = np.abs(new_fc_weights).sum()
+            message += f'\tFCWeights (Diff, Avg, Total): ({fc_diff}, {fc_average}, {fc_total})'
 
             print(message)
             losses = []

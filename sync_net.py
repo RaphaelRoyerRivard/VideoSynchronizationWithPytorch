@@ -11,7 +11,6 @@ from trainer import fit
 from torch.utils.data import DataLoader
 cuda = torch.cuda.is_available()
 
-
 class TripletLoss(nn.Module):
     """
     Triplet loss
@@ -24,9 +23,18 @@ class TripletLoss(nn.Module):
         self.margin = margin
 
     def forward(self, anchor, positive, negative, size_average=True):
-        distance_positive = (anchor - positive).pow(2).sum(1)  # .pow(.5)
-        distance_negative = (anchor - negative).pow(2).sum(1)  # .pow(.5)
-        losses = F.relu(distance_positive - distance_negative + self.margin)
+        # distance_positive = (anchor - positive).pow(2).sum(1)
+        # distance_negative = (anchor - negative).pow(2).sum(1)
+        # losses = F.relu(distance_positive - distance_negative + self.margin)
+        batch_size, embedding_size = anchor.shape
+        normalized_anchor = anchor / torch.norm(anchor)
+        normalized_positive = anchor / torch.norm(positive)
+        normalized_negative = anchor / torch.norm(negative)
+        positive_similarity = torch.bmm(normalized_anchor.view(batch_size, 1, embedding_size), normalized_positive.view(batch_size, embedding_size, 1))  # It works like a batched dot product
+        negative_similarity = torch.bmm(normalized_anchor.view(batch_size, 1, embedding_size), normalized_negative.view(batch_size, embedding_size, 1))  # It works like a batched dot product
+        positive_distance = 1 - positive_similarity
+        negative_distance = 1 - negative_similarity
+        losses = F.relu(positive_distance - negative_distance + self.margin)
         return losses.mean() if size_average else losses.sum()
 
 

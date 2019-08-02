@@ -2,10 +2,11 @@ import torch
 import numpy as np
 import time
 from datetime import timedelta
+import wandb
 
 
 def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs, cuda, log_interval, metrics=[],
-        start_epoch=0, save_progress_path=None):
+        mesure_weights=False, start_epoch=0, save_progress_path=None):
     """
     Loaders, model, loss function and metrics should work together for a given task,
     i.e. The model should be able to process data output of loaders,
@@ -19,10 +20,11 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
         print("Starting Epoch", epoch)
         scheduler.step()
 
-        fc_weights = model.module.embedding_net.fc.weight.cpu().data.numpy()
+        if mesure_weights:
+            fc_weights = model.module.embedding_net.fc.weight.cpu().data.numpy()
 
         # Train stage
-        train_loss, metrics = train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, metrics)
+        train_loss, metrics = train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, metrics, mesure_weights)
 
         message = 'Epoch: {}/{}. Train set: Average loss: {:.4f}'.format(epoch + 1, n_epochs, train_loss)
         for metric in metrics:
@@ -37,11 +39,17 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
             for metric in metrics:
                 message += '\t{}: {}'.format(metric.name(), metric.value())
 
-        new_fc_weights = model.module.embedding_net.fc.weight.cpu().data.numpy()
-        fc_diff = np.abs(new_fc_weights - fc_weights).sum()
-        fc_average = np.abs(new_fc_weights).mean()
-        fc_total = np.abs(new_fc_weights).sum()
-        message += f'\tFCWeights (Diff, Avg, Total): ({fc_diff}, {fc_average}, {fc_total})'
+            wandb.log({'epoch': epoch, 'train_loss': train_loss, 'val_loss': val_loss})
+
+        else:
+            wandb.log({'epoch': epoch, 'loss': train_loss})
+
+        if mesure_weights:
+            new_fc_weights = model.module.embedding_net.fc.weight.cpu().data.numpy()
+            fc_diff = np.abs(new_fc_weights - fc_weights).sum()
+            fc_average = np.abs(new_fc_weights).mean()
+            fc_total = np.abs(new_fc_weights).sum()
+            message += f'\tFCWeights (Diff, Avg, Total): ({fc_diff}, {fc_average}, {fc_total})'
 
         print(message)
 
@@ -58,7 +66,7 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
                 progres_file.write(message + "\n\n")
 
 
-def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, metrics):
+def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, metrics, mesure_weights):
     for metric in metrics:
         metric.reset()
 
@@ -83,7 +91,8 @@ def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, met
         if cuda:
             data = tuple(d.cuda() for d in data)
 
-        fc_weights = model.module.embedding_net.fc.weight.cpu().data.numpy()
+        if mesure_weights:
+            fc_weights = model.module.embedding_net.fc.weight.cpu().data.numpy()
 
         optimizer.zero_grad()
         outputs = model(*data)
@@ -111,11 +120,12 @@ def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, met
             for metric in metrics:
                 message += '\t{}: {}'.format(metric.name(), metric.value())
 
-            new_fc_weights = model.module.embedding_net.fc.weight.cpu().data.numpy()
-            fc_diff = np.abs(new_fc_weights - fc_weights).sum()
-            fc_average = np.abs(new_fc_weights).mean()
-            fc_total = np.abs(new_fc_weights).sum()
-            message += f'\tFCWeights (Diff, Avg, Total): ({fc_diff}, {fc_average}, {fc_total})'
+            if mesure_weights:
+                new_fc_weights = model.module.embedding_net.fc.weight.cpu().data.numpy()
+                fc_diff = np.abs(new_fc_weights - fc_weights).sum()
+                fc_average = np.abs(new_fc_weights).mean()
+                fc_total = np.abs(new_fc_weights).sum()
+                message += f'\tFCWeights (Diff, Avg, Total): ({fc_diff}, {fc_average}, {fc_total})'
 
             print(message)
             losses = []

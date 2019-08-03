@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import os
 import re
+import torch
 from torch.utils.data import Dataset, DataLoader
 
 
@@ -144,26 +145,18 @@ class AngioSequenceTripletDataset(Dataset):
     """
     Yield frame triplets for phase 0
     """
-    def __init__(self, path, path_to_ignore, sequence, min_pos_dist, max_pos_dist, min_neg_dist, max_neg_dist):
+    def __init__(self, path, path_to_ignore, sequence):
         """Sample most trivial training data for phase 1 (intra-video sampling of consecutive frames)
 
         Args:
             path (str): path in which we can find sequences of images
-            min_pos_dist (int): min offset between positive frames
-            max_pos_dist (int): max offset between positive frames
-            min_neg_dist (int): min offset between positive, anchor and negative
-            max_neg_dist (int): max offset between positive, anchor and negative
         """
         self.files = get_all_valid_frames_in_path(path, path_to_ignore)
         self.video_frame_provider = VideoFrameProvider(images=self.files)
         self.sequence = sequence
-        # self.min_pos_dist = min_pos_dist
-        # self.max_pos_dist = max_pos_dist
-        # self.min_neg_dist = min_neg_dist
-        # self.max_neg_dist = max_neg_dist
-        self._calc_all_possibilities()
+        self._calc_all_triplets()
 
-    def _calc_all_possibilities(self):
+    def _calc_all_triplets(self):
         self.triplets = []
         self.triplet_video_indices = []
         self.triplet_video_offset = []
@@ -174,9 +167,9 @@ class AngioSequenceTripletDataset(Dataset):
             video_frame_count = self.video_frame_provider.get_current_video_frame_count()
             hb_freq = self.video_frame_provider.get_current_video_heartbeat_frequency()
             min_pos_dist = 1
-            max_pos_dist = int(hb_freq / 4)
-            min_neg_dist = int(hb_freq * 3 / 4)
-            max_neg_dist = int(hb_freq * 5 / 4)
+            max_pos_dist = round(hb_freq / 8)
+            min_neg_dist = round(hb_freq * 3 / 8)
+            max_neg_dist = round(hb_freq * 5 / 8)
             frames = list(range(video_frame_count))[self.sequence-1:-max_neg_dist]
             print(f"Video {video_id} has {video_frame_count} frames and {len(frames)} anchors from {frames[0]} to {frames[-1]} @{hb_freq} f/hb")
             for a in frames:
@@ -207,29 +200,104 @@ class AngioSequenceTripletDataset(Dataset):
             negative.append(self.video_frame_provider.get_current_video_frame(triplet[2] - sequence_index))
         return np.array([anchor, positive, negative])
 
-        # self.video_frame_provider.select_video(item)
-        #
-        # # sample a random offset between (anchor, pos)
-        # pos_dist = np.random.randint(self.min_pos_dist, self.max_pos_dist + 1)
-        #
-        # # sample a random offset between (anchor, neg)
-        # neg_dist = np.random.randint(self.min_neg_dist, self.max_neg_dist + 1)
-        #
-        # # [0, -neg]
-        # video_frame_count = self.video_frame_provider.get_current_video_frame_count()
-        # frames = list(range(video_frame_count))[self.sequence-1:-neg_dist]
-        #
-        # for f in frames:
-        #     anchor = []
-        #     positive = []
-        #     negative = []
-        #     for i in reversed(range(self.sequence)):
-        #         anchor.append(self.video_frame_provider.get_current_video_frame(f-i))
-        #         positive.append(self.video_frame_provider.get_current_video_frame(f + pos_dist - i))
-        #         negative.append(self.video_frame_provider.get_current_video_frame(f + neg_dist - i))
-        #
-        #     triplet = np.array([anchor, positive, negative])
-        #     yield triplet
+
+class AngioSequenceMultiSiameseDataset(Dataset):
+    """
+    Yield matrices of positive and negative pairs
+    """
+    def __init__(self, path, path_to_ignore, sequence, epoch_size, batch_size):
+        """
+        Sample most trivial training data for phase 0 (intra-video sampling of consecutive frames)
+
+        Args:
+            path (str): path in which we can find sequences of images
+        """
+        self.files = get_all_valid_frames_in_path(path, path_to_ignore)
+        self.video_frame_provider = VideoFrameProvider(images=self.files)
+        self.sequence = sequence
+        self.epoch_size = epoch_size
+        self.batch_size = batch_size
+        self._calc_all_positive_and_negative_pairs()
+
+    def _calc_all_positive_and_negative_pairs(self):
+        self.frame_pairs = []
+        video_count = self.video_frame_provider.video_count()
+        for video_id in range(video_count):
+            # print("video", video_id)
+            self.video_frame_provider.select_video(video_id)
+            video_frame_count = self.video_frame_provider.get_current_video_frame_count()
+            video_frame_pairs = np.zeros((video_frame_count, video_frame_count))
+            hb_freq = self.video_frame_provider.get_current_video_heartbeat_frequency()
+            # print("hb_freq", hb_freq)
+            min_pos_dist = round(hb_freq * 7 / 8)
+            max_pos_dist = round(hb_freq / 8)
+            min_neg_dist = round(hb_freq * 3 / 8)
+            max_neg_dist = round(hb_freq * 5 / 8)
+            # print("min_pos_dist", min_pos_dist)
+            # print("max_pos_dist", max_pos_dist)
+            # print("min_neg_dist", min_neg_dist)
+            # print("max_neg_dist", max_neg_dist)
+            for i in range(video_frame_count):
+                for j in range(i+1, video_frame_count):
+                    a = i % hb_freq
+                    b = j % hb_freq
+                    frame_diff = abs(a - b)
+                    if frame_diff >= min_pos_dist or frame_diff <= max_pos_dist:
+                        video_frame_pairs[i][j] = video_frame_pairs[j][i] = 1
+                    elif min_neg_dist <= frame_diff <= max_neg_dist:
+                        video_frame_pairs[i][j] = video_frame_pairs[j][i] = -1
+            # print(video_frame_pairs)
+            self.frame_pairs.append(video_frame_pairs)
+
+    def __len__(self):
+        return self.epoch_size
+
+    def __getitem__(self, item):
+        return next(self.__iter__())
+
+    def __iter__(self):
+        count = 0
+        while count < self.epoch_size:
+            count += 1
+            # Select a random video
+            video_id = np.random.randint(0, self.video_frame_provider.video_count())
+            self.video_frame_provider.select_video(video_id)
+            # print("video_id", video_id)
+            # print("fpb", self.video_frame_provider.get_current_video_heartbeat_frequency())
+            # print("frame_pairs", self.frame_pairs[video_id])
+            frame_count = self.video_frame_provider.get_current_video_frame_count()
+            possible_frames = np.arange(self.sequence - 1, frame_count)
+
+            # if there are more frames in the video than the size of our batch, we can sample from it
+            if len(possible_frames) > self.batch_size:
+                # Randomly select frames in our video based on the batch size
+                frame_indices = np.random.choice(possible_frames, self.batch_size, replace=False)
+                # print("frame_indices", frame_indices)
+                # print(f"frame_pairs[{frame_indices[0]}]", self.frame_pairs[video_id][frame_indices[0]])
+                frame_sequences = []
+                positive_matrix = np.zeros((self.batch_size, self.batch_size), dtype=np.float32)
+                negative_matrix = np.zeros((self.batch_size, self.batch_size), dtype=np.float32)
+
+                # Compare every frame to create the positive and negative matrices
+                for i, frame_a_index in enumerate(frame_indices):
+                    for j in range(i+1, len(frame_indices)):
+                        pair = self.frame_pairs[video_id][frame_a_index, frame_indices[j]]
+                        if pair == 1:  # positive pair
+                            positive_matrix[i, j] = positive_matrix[j, i] = 1
+                        elif pair == -1:  # negative pair
+                            negative_matrix[i, j] = negative_matrix[j, i] = 1
+
+                    # Create frame sequence
+                    frame_sequence = []
+                    for sequence_index in reversed(range(self.sequence)):
+                        frame_sequence.append(self.video_frame_provider.get_current_video_frame(frame_a_index - sequence_index))
+                    frame_sequences.append(frame_sequence)
+
+                # yield torch.FloatTensor(frame_sequences), torch.from_numpy(positive_matrix), torch.from_numpy(negative_matrix)
+                yield np.array(frame_sequences), positive_matrix, negative_matrix
+            else:
+                # TODO create the matrices with every frames (<= batch size)
+                raise NotImplementedError("Cannot sample from video with less frames than the batch size")
 
 
 class AngioSequenceTestDataset(Dataset):
@@ -283,17 +351,19 @@ def get_triplets_parameters(path, path_to_ignore):
     return {
         'path': path,
         'path_to_ignore': path_to_ignore,
-        'sequence': 3,
-        'min_pos_dist': 1,
-        'max_pos_dist': 4,
-        'min_neg_dist': 8,
-        'max_neg_dist': 14
+        'sequence': 3
     }
 
 
 # def get_initialized_triplet_selector():
 #     params = get_triplets_parameters()
 #     return AllTripletSelector(**params)
+
+
+def get_multisiamese_datasets(training_path, validation_path, epoch_size, batch_size):
+    training_set = AngioSequenceMultiSiameseDataset(training_path, validation_path, 3, epoch_size, batch_size)
+    validation_set = AngioSequenceMultiSiameseDataset(validation_path, None, 3, round(epoch_size / 10), batch_size)
+    return training_set, validation_set
 
 
 def get_datasets(training_path, validation_path):
@@ -312,6 +382,18 @@ if __name__ == '__main__':
     training_path = r'C:\Users\root\Data\Angiographie'
     validation_path = r'C:\Users\root\Data\Angiographie\KR-11'
 
+    training_set, validation_set = get_multisiamese_datasets(training_path, validation_path, 1, 10)
+    training_dataloader = DataLoader(training_set, batch_size=1, shuffle=False, num_workers=0)
+    # for sequences, positive_matrix, negative_matrix in training_set:
+    for i_batch, data in enumerate(training_dataloader):
+        print(type(data))
+        sequences = data[0][0]
+        positive_matrix = data[1]
+        negative_matrix = data[2]
+        print("sequences", sequences.shape)
+        print("positive_matrix", positive_matrix)
+        print("negative_matrix", negative_matrix)
+
     # training_set, validation_set = get_datasets(training_path, validation_path)
     # training_dataloader = DataLoader(training_set, batch_size=4, shuffle=True, num_workers=4)
     # validation_dataloader = DataLoader(training_set, batch_size=4, shuffle=True, num_workers=4)
@@ -319,11 +401,11 @@ if __name__ == '__main__':
     # for i_batch, sample_batched in enumerate(validation_dataloader):
     #     print(i_batch, sample_batched.size(), sample_batched.type())
 
-    test_set = get_test_set(training_path)
-    test_loader = DataLoader(test_set, batch_size=1, shuffle=False, num_workers=1)
-
-    for i, data in enumerate(test_loader):
-        print(i, data.shape)
+    # test_set = get_test_set(training_path)
+    # test_loader = DataLoader(test_set, batch_size=1, shuffle=False, num_workers=1)
+    #
+    # for i, data in enumerate(test_loader):
+    #     print(i, data.shape)
 
     # while True:
     #     index = np.random.randint(0, len(dataset))

@@ -6,7 +6,7 @@ import wandb
 
 
 def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs, cuda, log_interval, metrics=[],
-        mesure_weights=False, start_epoch=0, save_progress_path=None):
+        measure_weights=False, start_epoch=0, save_progress_path=None):
     """
     Loaders, model, loss function and metrics should work together for a given task,
     i.e. The model should be able to process data output of loaders,
@@ -20,11 +20,11 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
         print("Starting Epoch", epoch)
         scheduler.step()
 
-        if mesure_weights:
+        if measure_weights:
             fc_weights = model.module.embedding_net.fc.weight.cpu().data.numpy()
 
         # Train stage
-        train_loss, metrics = train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, metrics, mesure_weights)
+        train_loss, metrics = train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, metrics, measure_weights)
 
         message = 'Epoch: {}/{}. Train set: Average loss: {:.4f}'.format(epoch + 1, n_epochs, train_loss)
         for metric in metrics:
@@ -44,7 +44,7 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
         else:
             wandb.log({'epoch': epoch, 'loss': train_loss})
 
-        if mesure_weights:
+        if measure_weights:
             new_fc_weights = model.module.embedding_net.fc.weight.cpu().data.numpy()
             fc_diff = np.abs(new_fc_weights - fc_weights).sum()
             fc_average = np.abs(new_fc_weights).mean()
@@ -66,7 +66,7 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
                 progres_file.write(message + "\n\n")
 
 
-def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, metrics, mesure_weights):
+def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, metrics, measure_weights):
     for metric in metrics:
         metric.reset()
 
@@ -74,24 +74,34 @@ def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, met
     losses = []
     total_loss = 0
     start_time = time.time()
+    multisiamese_mode = False
 
     print("Will sample from train_loader")
     for batch_idx, data in enumerate(train_loader):
         # print("batch_idx", batch_idx, "data", data.shape, data.type())
         if not type(data) in (tuple, list):
             data = (data,)
-        elif len(data) == 3:  # (triplet, batch, channels, width, height)
-            # We want (batch, triplet, channels, width, height)
-            data = torch.stack(data)
-            data = data.permute(1, 0, *list(range(2, len(data.shape))))
-            channels = data.shape[2]
-            if channels == 1:
-                data = data.repeat(1, 1, 3, 1, 1)
-            data = (data,)
+        elif len(data) == 3:
+            # print(data)
+            # print(len(data[0].shape))
+            if len(data[0].shape) == 4:  # data = (triplet, batch, channels, width, height)
+                # We want (batch, triplet, channels, width, height)
+                data = torch.stack(data)
+                data = data.permute(1, 0, *list(range(2, len(data.shape))))
+                channels = data.shape[2]
+                if channels == 1:
+                    data = data.repeat(1, 1, 3, 1, 1)
+                data = (data,)
+
+            elif len(data[0].shape) == 5:  # data = (sequences, positive_matrix, negative_matrix)
+                multisiamese_mode = True
+                positive_matrix = data[1]
+                negative_matrix = data[2]
+                data = data[0]
         if cuda:
             data = tuple(d.cuda() for d in data)
 
-        if mesure_weights:
+        if measure_weights:
             fc_weights = model.module.embedding_net.fc.weight.cpu().data.numpy()
 
         optimizer.zero_grad()
@@ -102,7 +112,10 @@ def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, met
 
         loss_inputs = outputs
 
-        loss_outputs = loss_fn(*loss_inputs)
+        if multisiamese_mode:
+            loss_outputs = loss_fn(*loss_inputs, positive_matrix, negative_matrix)
+        else:
+            loss_outputs = loss_fn(*loss_inputs)
         loss = loss_outputs[0] if type(loss_outputs) in (tuple, list) else loss_outputs
         losses.append(loss.item())
         total_loss += loss.item()
@@ -120,7 +133,7 @@ def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, met
             for metric in metrics:
                 message += '\t{}: {}'.format(metric.name(), metric.value())
 
-            if mesure_weights:
+            if measure_weights:
                 new_fc_weights = model.module.embedding_net.fc.weight.cpu().data.numpy()
                 fc_diff = np.abs(new_fc_weights - fc_weights).sum()
                 fc_average = np.abs(new_fc_weights).mean()

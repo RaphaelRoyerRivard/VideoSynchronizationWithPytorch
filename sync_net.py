@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as models
+from torch.autograd import Variable
 from torch.optim import lr_scheduler
 from torchsummary import summary
 import numpy as np
@@ -41,19 +42,19 @@ class CosineSimilarityTripletLoss(nn.Module):
 
     def forward(self, anchor, positive, negative, size_average=True):
         batch_size, embedding_size = anchor.shape
-        normalized_anchor = anchor / torch.norm(anchor)
-        normalized_positive = positive / torch.norm(positive)
-        normalized_negative = negative / torch.norm(negative)
-        # print("normalized anchor", normalized_anchor)
-        # print("normalized pos", normalized_positive)
-        # print("normalized neg", normalized_negative)
-        positive_similarity = torch.bmm(normalized_anchor.view(batch_size, 1, embedding_size), normalized_positive.view(batch_size, embedding_size, 1))  # It works like a batched dot product
-        negative_similarity = torch.bmm(normalized_anchor.view(batch_size, 1, embedding_size), normalized_negative.view(batch_size, embedding_size, 1))  # It works like a batched dot product
-        positive_distance = 1 - positive_similarity
-        negative_distance = 1 - negative_similarity
-        # print("pos dist", positive_distance)
-        # print("neg dist", negative_distance)
-        losses = F.relu(positive_distance - negative_distance + self.margin)
+        normalized_anchors = anchor / torch.norm(anchor, dim=-1).view(batch_size, 1)
+        normalized_positives = positive / torch.norm(positive, dim=-1).view(batch_size, 1)
+        normalized_negatives = negative / torch.norm(negative, dim=-1).view(batch_size, 1)
+        # print("normalized anchors", normalized_anchors)
+        # print("normalized positives", normalized_positives)
+        # print("normalized negatives", normalized_negatives)
+        positive_similarities = torch.bmm(normalized_anchors.view(batch_size, 1, embedding_size), normalized_positives.view(batch_size, embedding_size, 1))  # It works like a batched dot product
+        negative_similarities = torch.bmm(normalized_anchors.view(batch_size, 1, embedding_size), normalized_negatives.view(batch_size, embedding_size, 1))  # It works like a batched dot product
+        positive_distances = 1 - positive_similarities
+        negative_distances = 1 - negative_similarities
+        # print("pos dist", positive_distances)
+        # print("neg dist", negative_distances)
+        losses = F.relu(positive_distances - negative_distances + self.margin)
         return losses.mean() if size_average else losses.sum()
 
 
@@ -124,6 +125,61 @@ class OnlineTripletLoss(nn.Module):
         return losses.mean(), len(triplets)
 
 
+class MultiSiameseCosineSimilarityLoss(nn.Module):
+    """
+    Multi Siamese Similarity loss
+    Takes a batch of embeddings with masks for positive pairs and negative pairs.
+    Useful to get a loss over several pairs with few images.
+    """
+
+    """
+    Parameters
+    embeddings: matrix of size (batch_size, embedding_size)
+    positive_matrix: matrix of positive pairs of size (batch_size, batch_size)
+    negative_matrix: matrix of negative pairs of size (batch_size, batch_size)
+    
+    Return
+    A scalar between 0 and 4 where 0 represents perfect similarity between positive pairs and perfect dissimilarity 
+    between negative pairs while 4 is the opposite.
+    """
+    def forward(self, embeddings, positive_matrix, negative_matrix):
+        batch_size, embedding_size = embeddings.shape
+
+        # normalize embeddings
+        normalized_embeddings = embeddings / torch.norm(embeddings, dim=-1).view(batch_size, 1)
+        # print("normalized_embeddings", normalized_embeddings)
+
+        # calculate cosine similarity for every combination
+        cosine_similarities = np.zeros((batch_size, batch_size), dtype=np.float32)
+        for i in range(batch_size):
+            for j in range(i+1, batch_size):
+                cosine_similarities[i][j] = cosine_similarities[j][i] = normalized_embeddings[i].dot(normalized_embeddings[j])
+        cosine_similarities = torch.from_numpy(cosine_similarities)
+        # print("cosine_similarities", cosine_similarities)
+
+        # apply the masks (positive and negative matrices) over the cosine similarity matrix
+        positive_similarities = cosine_similarities * positive_matrix
+        negative_similarities = cosine_similarities * negative_matrix
+        # print("positive_similarities", positive_similarities)
+        # print("negative_similarities", negative_similarities)
+
+        # TODO find a way of not breaking the graph
+        # calculate the average positive and negative similarity
+        positive_count = positive_matrix.sum()
+        negative_count = negative_matrix.sum()
+        average_positive_similarity = positive_similarities.sum() / (positive_count if positive_count > 0 else 1)
+        average_negative_similarity = negative_similarities.sum() / (negative_count if negative_count > 0 else 1)
+        # print("average_positive_similarity", average_positive_similarity)
+        # print("average_negative_similarity", average_negative_similarity)
+
+        positive_value = 1 - average_positive_similarity
+        negative_value = 1 + average_negative_similarity
+        loss = positive_value + negative_value
+        # loss = Variable(loss, requires_grad=True)
+        # print(loss)
+        return loss
+
+
 class TripletNet(nn.Module):
     """
     https://github.com/adambielski/siamese-triplet/blob/master/networks.py
@@ -147,6 +203,18 @@ class TripletNet(nn.Module):
 
     def get_embedding(self, x):
         return self.embedding_net(x)
+
+
+class MultiSiameseNet(nn.Module):
+    def __init__(self, embedding_net):
+        super(MultiSiameseNet, self).__init__()
+        self.embedding_net = embedding_net
+
+    def forward(self, x):
+        # (batch_size, channels, width, height)
+        # print("MultiSiameseNet input", x.shape)
+        embeddings = self.embedding_net(x)
+        return embeddings
 
 
 def reset_first_and_last_layers(model):
@@ -202,3 +270,9 @@ if __name__ == "__main__":
     # c = torch.FloatTensor([[-1, -1]])
     # d = torch.FloatTensor([[0, 1]])
     # print("loss", loss.forward(a, b, d))
+
+    loss_fn = MultiSiameseCosineSimilarityLoss()
+    embeddings = torch.FloatTensor([[1, 1], [0.5, 1], [-1, -1], [-0.5, -1]])
+    positive_matrix = torch.FloatTensor([[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]])
+    negative_matrix = torch.FloatTensor([[0, 0, 1, 1], [0, 0, 1, 1], [1, 1, 0, 0], [1, 1, 0, 0]])
+    print("loss", loss_fn.forward(embeddings, positive_matrix, negative_matrix))

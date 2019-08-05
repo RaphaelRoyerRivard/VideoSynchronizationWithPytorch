@@ -27,7 +27,7 @@ class VideoFrameProvider(object):
         return len(self.frames[self.current_video_id])
 
     def get_current_video_frame(self, frame_id):
-        assert 0 <= frame_id < self.get_current_video_frame_count(), "'frame_id' is out of bounds"
+        assert 0 <= frame_id < self.get_current_video_frame_count(), f"'frame_id' {frame_id} is out of bounds (max is {self.get_current_video_frame_count()})"
         return self.frames[self.current_video_id][frame_id]
 
     def get_current_video_heartbeat_frequency(self):
@@ -267,37 +267,40 @@ class AngioSequenceMultiSiameseDataset(Dataset):
             # print("frame_pairs", self.frame_pairs[video_id])
             frame_count = self.video_frame_provider.get_current_video_frame_count()
             possible_frames = np.arange(self.sequence - 1, frame_count)
+            possible_frames_count = len(possible_frames)
 
             # if there are more frames in the video than the size of our batch, we can sample from it
-            if len(possible_frames) > self.batch_size:
+            if possible_frames_count > self.batch_size:
                 # Randomly select frames in our video based on the batch size
                 frame_indices = np.random.choice(possible_frames, self.batch_size, replace=False)
                 # print("frame_indices", frame_indices)
                 # print(f"frame_pairs[{frame_indices[0]}]", self.frame_pairs[video_id][frame_indices[0]])
-                frame_sequences = []
                 positive_matrix = np.zeros((self.batch_size, self.batch_size), dtype=np.float32)
                 negative_matrix = np.zeros((self.batch_size, self.batch_size), dtype=np.float32)
-
-                # Compare every frame to create the positive and negative matrices
-                for i, frame_a_index in enumerate(frame_indices):
-                    for j in range(i+1, len(frame_indices)):
-                        pair = self.frame_pairs[video_id][frame_a_index, frame_indices[j]]
-                        if pair == 1:  # positive pair
-                            positive_matrix[i, j] = positive_matrix[j, i] = 1
-                        elif pair == -1:  # negative pair
-                            negative_matrix[i, j] = negative_matrix[j, i] = 1
-
-                    # Create frame sequence
-                    frame_sequence = []
-                    for sequence_index in reversed(range(self.sequence)):
-                        frame_sequence.append(self.video_frame_provider.get_current_video_frame(frame_a_index - sequence_index))
-                    frame_sequences.append(frame_sequence)
-
-                # yield torch.FloatTensor(frame_sequences), torch.from_numpy(positive_matrix), torch.from_numpy(negative_matrix)
-                yield np.array(frame_sequences), positive_matrix, negative_matrix
             else:
-                # TODO create the matrices with every frames (<= batch size)
-                raise NotImplementedError("Cannot sample from video with less frames than the batch size")
+                frame_indices = possible_frames
+                positive_matrix = np.zeros((possible_frames_count, possible_frames_count), dtype=np.float32)
+                negative_matrix = np.zeros((possible_frames_count, possible_frames_count), dtype=np.float32)
+
+            frame_sequences = []
+            # Compare every frame to create the positive and negative matrices
+            for i, frame_a_index in enumerate(frame_indices):
+                for j in range(i+1, len(frame_indices)):
+                    pair = self.frame_pairs[video_id][frame_a_index, frame_indices[j]]
+                    if pair == 1:  # positive pair
+                        positive_matrix[i, j] = positive_matrix[j, i] = 1
+                    elif pair == -1:  # negative pair
+                        negative_matrix[i, j] = negative_matrix[j, i] = 1
+
+                # Create frame sequence
+                frame_sequence = []
+                for sequence_index in reversed(range(self.sequence)):
+                    frame_sequence.append(self.video_frame_provider.get_current_video_frame(frame_a_index - sequence_index))
+                frame_sequences.append(frame_sequence)
+
+            # yield torch.FloatTensor(frame_sequences), torch.from_numpy(positive_matrix), torch.from_numpy(negative_matrix)
+            yield np.array(frame_sequences), positive_matrix, negative_matrix
+
 
 
 class AngioSequenceTestDataset(Dataset):

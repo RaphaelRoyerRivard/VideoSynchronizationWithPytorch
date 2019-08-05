@@ -138,11 +138,12 @@ class MultiSiameseCosineSimilarityLoss(nn.Module):
     positive_matrix: matrix of positive pairs of size (batch_size, batch_size)
     negative_matrix: matrix of negative pairs of size (batch_size, batch_size)
     
-    Return
+    Returns
     A scalar between 0 and 4 where 0 represents perfect similarity between positive pairs and perfect dissimilarity 
     between negative pairs while 4 is the opposite.
     """
     def forward(self, embeddings, positive_matrix, negative_matrix):
+        # TODO find a way of not breaking the graph
         batch_size, embedding_size = embeddings.shape
 
         # normalize embeddings
@@ -150,11 +151,16 @@ class MultiSiameseCosineSimilarityLoss(nn.Module):
         # print("normalized_embeddings", normalized_embeddings)
 
         # calculate cosine similarity for every combination
-        cosine_similarities = np.zeros((batch_size, batch_size), dtype=np.float32)
-        for i in range(batch_size):
-            for j in range(i+1, batch_size):
-                cosine_similarities[i][j] = cosine_similarities[j][i] = normalized_embeddings[i].dot(normalized_embeddings[j])
-        cosine_similarities = torch.from_numpy(cosine_similarities)
+        # cosine_similarities = torch.zeros((batch_size, batch_size), dtype=torch.float32)
+        # for i in range(batch_size):
+        #     for j in range(i, batch_size):
+        #         cosine_similarities[i][j] = cosine_similarities[j][i] = normalized_embeddings[i].dot(normalized_embeddings[j])
+        cosine_similarities = torch.bmm(normalized_embeddings.view(1, batch_size, embedding_size), normalized_embeddings.t().view(1, embedding_size, batch_size)).cpu()
+        # print("bmm", bmm.shape)
+        # print("cosine_similarities", cosine_similarities.shape)
+        # diff = bmm.view(batch_size, batch_size).cpu() - cosine_similarities
+        # print("diff", diff.abs().sum())
+        # cosine_similarities = torch.from_numpy(cosine_similarities)
         # print("cosine_similarities", cosine_similarities)
 
         # apply the masks (positive and negative matrices) over the cosine similarity matrix
@@ -163,7 +169,6 @@ class MultiSiameseCosineSimilarityLoss(nn.Module):
         # print("positive_similarities", positive_similarities)
         # print("negative_similarities", negative_similarities)
 
-        # TODO find a way of not breaking the graph
         # calculate the average positive and negative similarity
         positive_count = positive_matrix.sum()
         negative_count = negative_matrix.sum()

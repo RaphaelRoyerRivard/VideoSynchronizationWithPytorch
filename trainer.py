@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import time
 from datetime import timedelta
-import wandb
+# import wandb
 
 
 def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs, cuda, log_interval, metrics=[],
@@ -39,10 +39,10 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
             for metric in metrics:
                 message += '\t{}: {}'.format(metric.name(), metric.value())
 
-            wandb.log({'epoch': epoch, 'train_loss': train_loss, 'val_loss': val_loss})
+            # wandb.log({'epoch': epoch, 'train_loss': train_loss, 'val_loss': val_loss})
 
-        else:
-            wandb.log({'epoch': epoch, 'loss': train_loss})
+        # else:
+        #     wandb.log({'epoch': epoch, 'loss': train_loss})
 
         if measure_weights:
             new_fc_weights = model.module.embedding_net.fc.weight.cpu().data.numpy()

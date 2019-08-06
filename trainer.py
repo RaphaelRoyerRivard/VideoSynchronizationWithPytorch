@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import time
 from datetime import timedelta
+from matplotlib import pyplot as plt
 # import wandb
 
 
@@ -16,6 +17,8 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
     Siamese network: Siamese loader, siamese model, contrastive loss
     Online triplet learning: batch loader, embedding model, online triplet loss
     """
+    train_losses = []
+    val_losses = []
     for epoch in range(start_epoch, n_epochs):
         print("Starting Epoch", epoch)
         scheduler.step()
@@ -25,24 +28,11 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
 
         # Train stage
         train_loss, metrics = train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, metrics, measure_weights)
+        train_losses.append(train_loss)
 
         message = 'Epoch: {}/{}. Train set: Average loss: {:.4f}'.format(epoch + 1, n_epochs, train_loss)
         for metric in metrics:
             message += '\t{}: {}'.format(metric.name(), metric.value())
-
-        if val_loader is not None:
-            val_loss, metrics = test_epoch(val_loader, model, loss_fn, cuda, metrics)
-            val_loss /= len(val_loader)
-
-            message += '\nEpoch: {}/{}. Validation set: Average loss: {:.4f}'.format(epoch + 1, n_epochs,
-                                                                                     val_loss)
-            for metric in metrics:
-                message += '\t{}: {}'.format(metric.name(), metric.value())
-
-            # wandb.log({'epoch': epoch, 'train_loss': train_loss, 'val_loss': val_loss})
-
-        # else:
-        #     wandb.log({'epoch': epoch, 'loss': train_loss})
 
         if measure_weights:
             new_fc_weights = model.module.embedding_net.fc.weight.cpu().data.numpy()
@@ -50,6 +40,20 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
             fc_average = np.abs(new_fc_weights).mean()
             fc_total = np.abs(new_fc_weights).sum()
             message += f'\tFCWeights (Diff, Avg, Total): ({fc_diff}, {fc_average}, {fc_total})'
+
+        if val_loader is not None:
+            val_loss, metrics = test_epoch(val_loader, model, loss_fn, cuda, metrics)
+            val_loss /= len(val_loader)
+            val_losses.append(val_loss)
+
+            message += '\nEpoch: {}/{}. Validation set: Average loss: {:.4f}'.format(epoch + 1, n_epochs, val_loss)
+            for metric in metrics:
+                message += '\t{}: {}'.format(metric.name(), metric.value())
+
+            # wandb.log({'epoch': epoch, 'train_loss': train_loss, 'val_loss': val_loss})
+
+        # else:
+        #     wandb.log({'epoch': epoch, 'loss': train_loss})
 
         print(message)
 
@@ -65,6 +69,24 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
             with open(save_progress_path + "/progress.txt", "a") as progres_file:
                 progres_file.write(message + "\n\n")
 
+        if epoch > 0:
+            plt.plot(train_losses, color='orange', label='train_loss')
+            plt.plot(val_losses, color='green', label='val_loss')
+            plt.title("Loss progression")
+            plt.xlabel("Epoch")
+            plt.ylabel("Loss")
+            plt.legend()
+            plt.show()
+
+    if save_progress_path is not None:
+        plt.plot(train_losses, color='orange', label='train_loss')
+        plt.plot(val_losses, color='green', label='val_loss')
+        plt.title("Loss progression")
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        plt.legend()
+        plt.savefig(save_progress_path + r"\loss_progress.png")
+
 
 def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, metrics, measure_weights):
     for metric in metrics:
@@ -74,32 +96,11 @@ def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, met
     losses = []
     total_loss = 0
     start_time = time.time()
-    multisiamese_mode = False
 
     print("Will sample from train_loader")
     for batch_idx, data in enumerate(train_loader):
         # print("batch_idx", batch_idx, "data", data.shape, data.type())
-        if not type(data) in (tuple, list):
-            data = (data,)
-        elif len(data) == 3:
-            # print(data)
-            # print(len(data[0].shape))
-            if len(data[0].shape) == 4:  # data = (triplet, batch, channels, width, height)
-                # We want (batch, triplet, channels, width, height)
-                data = torch.stack(data)
-                data = data.permute(1, 0, *list(range(2, len(data.shape))))
-                channels = data.shape[2]
-                if channels == 1:
-                    data = data.repeat(1, 1, 3, 1, 1)
-                data = (data,)
-
-            elif len(data[0].shape) == 5:  # data = (sequences, positive_matrix, negative_matrix)
-                multisiamese_mode = True
-                positive_matrix = data[1]
-                negative_matrix = data[2]
-                data = data[0]
-        if cuda:
-            data = tuple(d.cuda() for d in data)
+        data, multisiamese_mode, positive_matrix, negative_matrix = reformat_data(data, cuda)
 
         if measure_weights:
             fc_weights = model.module.embedding_net.fc.weight.cpu().data.numpy()
@@ -125,7 +126,7 @@ def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, met
         for metric in metrics:
             metric(outputs, loss_outputs)
 
-        if batch_idx % log_interval == 0:
+        if batch_idx > 0 and batch_idx % log_interval == 0:
             elapsed_time = time.time() - start_time
             message = 'Train: [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tElapsed time: {}'.format(
                 batch_idx * len(data[0]), len(train_loader.dataset),
@@ -154,10 +155,7 @@ def test_epoch(val_loader, model, loss_fn, cuda, metrics):
         model.eval()
         val_loss = 0
         for batch_idx, data in enumerate(val_loader):
-            if not type(data) in (tuple, list):
-                data = (data,)
-            if cuda:
-                data = tuple(d.cuda() for d in data)
+            data, multisiamese_mode, positive_matrix, negative_matrix = reformat_data(data, cuda)
 
             outputs = model(*data)
 
@@ -165,7 +163,10 @@ def test_epoch(val_loader, model, loss_fn, cuda, metrics):
                 outputs = (outputs,)
             loss_inputs = outputs
 
-            loss_outputs = loss_fn(*loss_inputs)
+            if multisiamese_mode:
+                loss_outputs = loss_fn(*loss_inputs, positive_matrix, negative_matrix)
+            else:
+                loss_outputs = loss_fn(*loss_inputs)
             loss = loss_outputs[0] if type(loss_outputs) in (tuple, list) else loss_outputs
             val_loss += loss.item()
 
@@ -173,3 +174,31 @@ def test_epoch(val_loader, model, loss_fn, cuda, metrics):
                 metric(outputs, loss_outputs)
 
     return val_loss, metrics
+
+
+def reformat_data(data, cuda):
+    multisiamese_mode = False
+    positive_matrix = negative_matrix = None
+    if not type(data) in (tuple, list):
+        data = (data,)
+    elif len(data) == 3:
+        # print(data)
+        # print(len(data[0].shape))
+        if len(data[0].shape) == 4:  # data = (triplet, batch, channels, width, height)
+            # We want (batch, triplet, channels, width, height)
+            data = torch.stack(data)
+            data = data.permute(1, 0, *list(range(2, len(data.shape))))
+            channels = data.shape[2]
+            if channels == 1:
+                data = data.repeat(1, 1, 3, 1, 1)
+            data = (data,)
+
+        elif len(data[0].shape) == 5:  # data = (sequences, positive_matrix, negative_matrix)
+            multisiamese_mode = True
+            positive_matrix = data[1]
+            negative_matrix = data[2]
+            data = data[0]
+    if cuda:
+        data = tuple(d.cuda() for d in data)
+
+    return data, multisiamese_mode, positive_matrix, negative_matrix

@@ -139,50 +139,35 @@ class MultiSiameseCosineSimilarityLoss(nn.Module):
     negative_matrix: matrix of negative pairs of size (batch_size, batch_size)
     
     Returns
-    A scalar between 0 and 4 where 0 represents perfect similarity between positive pairs and perfect dissimilarity 
-    between negative pairs while 4 is the opposite.
+    loss: scalar between 0 and 4 where 0 represents perfect similarity between positive pairs and perfect dissimilarity 
+          between negative pairs while 4 is the opposite.
+    average_positive_similarity: normalized dot product of positive pairs of embeddings
+    average_negative_similarity: normalized dot product of negative pairs of embeddings
     """
     def forward(self, embeddings, positive_matrix, negative_matrix):
-        # TODO find a way of not breaking the graph
         batch_size, embedding_size = embeddings.shape
 
         # normalize embeddings
         normalized_embeddings = embeddings / torch.norm(embeddings, dim=-1).view(batch_size, 1)
-        # print("normalized_embeddings", normalized_embeddings)
 
         # calculate cosine similarity for every combination
-        # cosine_similarities = torch.zeros((batch_size, batch_size), dtype=torch.float32)
-        # for i in range(batch_size):
-        #     for j in range(i, batch_size):
-        #         cosine_similarities[i][j] = cosine_similarities[j][i] = normalized_embeddings[i].dot(normalized_embeddings[j])
-        cosine_similarities = torch.bmm(normalized_embeddings.view(1, batch_size, embedding_size), normalized_embeddings.t().view(1, embedding_size, batch_size)).cpu()
-        # print("bmm", bmm.shape)
-        # print("cosine_similarities", cosine_similarities.shape)
-        # diff = bmm.view(batch_size, batch_size).cpu() - cosine_similarities
-        # print("diff", diff.abs().sum())
-        # cosine_similarities = torch.from_numpy(cosine_similarities)
-        # print("cosine_similarities", cosine_similarities)
+        cosine_similarities = torch.bmm(normalized_embeddings.view(1, batch_size, embedding_size),
+                                        normalized_embeddings.t().view(1, embedding_size, batch_size)).cpu()
 
         # apply the masks (positive and negative matrices) over the cosine similarity matrix
         positive_similarities = cosine_similarities * positive_matrix
         negative_similarities = cosine_similarities * negative_matrix
-        # print("positive_similarities", positive_similarities)
-        # print("negative_similarities", negative_similarities)
 
         # calculate the average positive and negative similarity
         positive_count = positive_matrix.sum()
         negative_count = negative_matrix.sum()
         average_positive_similarity = positive_similarities.sum() / (positive_count if positive_count > 0 else 1)
         average_negative_similarity = negative_similarities.sum() / (negative_count if negative_count > 0 else 1)
-        # print("average_positive_similarity", average_positive_similarity)
-        # print("average_negative_similarity", average_negative_similarity)
 
         positive_value = 1 - average_positive_similarity
         negative_value = 1 + average_negative_similarity
         loss = positive_value + negative_value
-        # loss = Variable(loss, requires_grad=True)
-        # print(loss)
-        return loss
+        return loss, average_positive_similarity, average_negative_similarity
 
 
 class TripletNet(nn.Module):

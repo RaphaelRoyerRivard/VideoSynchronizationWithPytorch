@@ -3,15 +3,18 @@ import numpy as np
 import os
 import re
 import torch
+from matplotlib import pyplot as plt
 from torch.utils.data import Dataset, DataLoader
+from utils import optical_flow, optical_flow2
 
 
 class VideoFrameProvider(object):
-    def __init__(self, images):
+    def __init__(self, images, names):
         self.current_video_id = 0
         self.type = "images"
         self.frames = [x[0] for x in images]
         self.hb_frequencies = [x[1] for x in images]
+        self.names = names
 
     def _get_videos(self):
         return self.frames
@@ -22,6 +25,9 @@ class VideoFrameProvider(object):
     def select_video(self, video_id):
         assert 0 <= video_id < self.video_count(), "'video_id' is out of bounds"
         self.current_video_id = video_id
+
+    def get_current_video_name(self):
+        return self.names[self.current_video_id]
 
     def get_current_video_frame_count(self):
         return len(self.frames[self.current_video_id])
@@ -36,6 +42,7 @@ class VideoFrameProvider(object):
 
 def get_all_valid_frames_in_path(base_path, path_to_ignore):
     all_valid_frames = []
+    video_names = []
     relevant_frames_file_name = "relevant_frames.txt"
     for path, subfolders, files in os.walk(base_path):
         if path_to_ignore is not None and path_to_ignore in path:
@@ -44,6 +51,12 @@ def get_all_valid_frames_in_path(base_path, path_to_ignore):
             continue
         if relevant_frames_file_name not in files:
             continue
+
+        split_path = path.split("\\export\\")
+        angle = split_path[1]
+        patient = split_path[0].split("\\Angiographie\\")[1]
+        video_names.append(patient + ' ' + angle)
+
         valid_frames = []
         rfile = open(path + "/" + relevant_frames_file_name, "r")
         line = rfile.readline()
@@ -64,7 +77,7 @@ def get_all_valid_frames_in_path(base_path, path_to_ignore):
                 valid_frames.append(img)
         all_valid_frames.append((valid_frames, freq))
         print(len(valid_frames), "valid frames in", path)
-    return all_valid_frames
+    return all_valid_frames, video_names
 
 
 class TripletSelector:
@@ -81,66 +94,6 @@ class TripletSelector:
         raise NotImplementedError
 
 
-# class AllTripletSelector(TripletSelector):
-#     """
-#     Returns all possible triplets
-#     May be impractical in most cases
-#     https://github.com/adambielski/siamese-triplet/blob/master/utils.py
-#     """
-#
-#     def __init__(self):
-#         super(AllTripletSelector, self).__init__()
-#
-#     def get_triplets(self, embeddings, labels):
-#         labels = labels.cpu().data.numpy()
-#         triplets = []
-#         for label in set(labels):  # The set makes it that we iterate once for each value of label
-#             label_mask = (labels == label)
-#             label_indices = np.where(label_mask)[0]
-#             if len(label_indices) < 2:  # Cannot create a valid pair with a single value with that label
-#                 continue
-#             negative_indices = np.where(np.logical_not(label_mask))[0]
-#             anchor_positives = list(combinations(label_indices, 2))  # All anchor-positive pairs
-#
-#             # Add all negatives for all positive pairs
-#             temp_triplets = [[anchor_positive[0], anchor_positive[1], neg_ind] for anchor_positive in anchor_positives
-#                              for neg_ind in negative_indices]
-#             triplets += temp_triplets
-#
-#         return torch.LongTensor(np.array(triplets))
-
-
-# class AllTripletSelector(TripletSelector):
-#     """
-#     Returns all possible triplets
-#     May be impractical in most cases
-#     """
-#
-#     def __init__(self, path, samples=1, shuffle=True, sequence=1, min_pos_dist=1, max_pos_dist=2, min_neg_dist=3, max_neg_dist=5):
-#         super(AllTripletSelector, self).__init__()
-#         self.files = get_all_valid_frames_in_path(path)
-#         self.video_frame_provider = VideoFrameProvider(images=self.files)
-#         self.shuffle = shuffle
-#         self.sequence = sequence
-#         self.min_pos_dist = min_pos_dist
-#         self.max_pos_dist = max_pos_dist
-#         self.min_neg_dist = min_neg_dist
-#         self.max_neg_dist = max_neg_dist
-#         self.samples = samples
-#
-#     def get_triplets(self, embeddings, labels):
-#         triplets = []
-#         for video_id in range(self.video_frame_provider.video_count()):
-#             self.video_frame_provider.select_video(video_id)
-#             video_frame_count = self.video_frame_provider.get_current_video_frame_count()
-#             frames = list(range(video_frame_count))[self.sequence-1:-(self.max_neg_dist+1)]
-#             for a in frames:
-#                 for p in range(self.min_pos_dist, self.max_pos_dist+1):
-#                     for n in range(self.min_neg_dist, self.max_neg_dist+1):
-#                         triplets.append([a, a+p, a+n])  # problem: doesn't take video_id into consideration
-#         return np.array(triplets)
-
-
 class AngioSequenceTripletDataset(Dataset):
     """
     Yield frame triplets for phase 0
@@ -151,8 +104,8 @@ class AngioSequenceTripletDataset(Dataset):
         Args:
             path (str): path in which we can find sequences of images
         """
-        self.files = get_all_valid_frames_in_path(path, path_to_ignore)
-        self.video_frame_provider = VideoFrameProvider(images=self.files)
+        self.files, self.names = get_all_valid_frames_in_path(path, path_to_ignore)
+        self.video_frame_provider = VideoFrameProvider(images=self.files, names=self.names)
         self.sequence = sequence
         self._calc_all_triplets()
 
@@ -212,14 +165,15 @@ class AngioSequenceMultiSiameseDataset(Dataset):
         Args:
             path (str): path in which we can find sequences of images
         """
-        self.files = get_all_valid_frames_in_path(path, path_to_ignore)
-        self.video_frame_provider = VideoFrameProvider(images=self.files)
+        self.files, self.names = get_all_valid_frames_in_path(path, path_to_ignore)
+        self.video_frame_provider = VideoFrameProvider(images=self.files, names=self.names)
         self.sequence = sequence
         self.epoch_size = epoch_size
         self.batch_size = batch_size
         self._calc_all_positive_and_negative_pairs()
 
     def _calc_all_positive_and_negative_pairs(self):
+        from matplotlib import pyplot as plt
         self.frame_pairs = []
         video_count = self.video_frame_provider.video_count()
         for video_id in range(video_count):
@@ -248,6 +202,8 @@ class AngioSequenceMultiSiameseDataset(Dataset):
                         video_frame_pairs[i][j] = video_frame_pairs[j][i] = -1
             # print(video_frame_pairs)
             self.frame_pairs.append(video_frame_pairs)
+            plt.imshow(video_frame_pairs)
+            plt.show()
 
     def __len__(self):
         return self.epoch_size
@@ -302,12 +258,89 @@ class AngioSequenceMultiSiameseDataset(Dataset):
             yield np.array(frame_sequences), positive_matrix, negative_matrix
 
 
+class AngioSequenceSoftMultiSiameseDataset(Dataset):
+    """
+    Yield matrices of similarity between pairs
+    """
+    def __init__(self, path, path_to_ignore, sequence, epoch_size, batch_size):
+        """
+        Sample most trivial training data for phase 0 (intra-video sampling of consecutive frames)
+
+        Args:
+            path (str): path in which we can find sequences of images
+        """
+        self.files, self.names = get_all_valid_frames_in_path(path, path_to_ignore)
+        self.video_frame_provider = VideoFrameProvider(images=self.files, names=self.names)
+        self.sequence = sequence
+        self.epoch_size = epoch_size
+        self.batch_size = batch_size
+        self._calc_similarity_between_all_pairs()
+
+    def _calc_similarity_between_all_pairs(self):
+        self.frame_pairs = []
+        video_count = self.video_frame_provider.video_count()
+        for video_id in range(video_count):
+            # print("video", video_id)
+            self.video_frame_provider.select_video(video_id)
+            video_frame_count = self.video_frame_provider.get_current_video_frame_count()
+            video_frame_pairs = np.zeros((video_frame_count, video_frame_count))
+            hb_freq = self.video_frame_provider.get_current_video_heartbeat_frequency()
+            for i in range(video_frame_count):
+                for j in range(i+1, video_frame_count):
+                    a = i % hb_freq
+                    b = j % hb_freq
+                    frame_diff = abs(a - b)
+                    frame_diff = min(frame_diff, hb_freq - frame_diff)
+                    video_frame_pairs[i][j] = video_frame_pairs[j][i] = 1 - frame_diff / (hb_freq / 2)
+            self.frame_pairs.append(video_frame_pairs)
+
+    def __len__(self):
+        return self.epoch_size
+
+    def __getitem__(self, item):
+        return next(self.__iter__())
+
+    def __iter__(self):
+        count = 0
+        while count < self.epoch_size:
+            count += 1
+            # Select a random video
+            video_id = np.random.randint(0, self.video_frame_provider.video_count())
+            self.video_frame_provider.select_video(video_id)
+            frame_count = self.video_frame_provider.get_current_video_frame_count()
+            possible_frames = np.arange(self.sequence - 1, frame_count)
+            possible_frames_count = len(possible_frames)
+
+            # if there are more frames in the video than the size of our batch, we can sample from it
+            if possible_frames_count > self.batch_size:
+                # Randomly select frames in our video based on the batch size
+                frame_indices = np.random.choice(possible_frames, self.batch_size, replace=False)
+                similarity_matrix = np.zeros((self.batch_size, self.batch_size), dtype=np.float32)
+            else:
+                frame_indices = possible_frames
+                similarity_matrix = np.zeros((possible_frames_count, possible_frames_count), dtype=np.float32)
+
+            frame_sequences = []
+            # Compare every frame to create the positive and negative matrices
+            for i, frame_a_index in enumerate(frame_indices):
+                for j in range(i+1, len(frame_indices)):
+                    pair_value = self.frame_pairs[video_id][frame_a_index, frame_indices[j]]
+                    similarity_matrix[i, j] = similarity_matrix[j, i] = pair_value
+
+                # Create frame sequence
+                frame_sequence = []
+                for sequence_index in reversed(range(self.sequence)):
+                    frame_sequence.append(self.video_frame_provider.get_current_video_frame(frame_a_index - sequence_index))
+                frame_sequences.append(frame_sequence)
+
+            yield np.array(frame_sequences), similarity_matrix
+
 
 class AngioSequenceTestDataset(Dataset):
 
     def __init__(self, path):
-        self.files = get_all_valid_frames_in_path(path, None)
-        self.video_frame_provider = VideoFrameProvider(images=self.files)
+        self.files, self.names = get_all_valid_frames_in_path(path, None)
+        self.video_frame_provider = VideoFrameProvider(images=self.files, names=self.names)
         self.sequence_length = 3
 
     def __len__(self):
@@ -322,7 +355,7 @@ class AngioSequenceTestDataset(Dataset):
             for sequence_index in reversed(range(self.sequence_length)):
                 sequence.append(self.video_frame_provider.get_current_video_frame(i - sequence_index))
             sequences.append(sequence)
-        return np.array(sequences)
+        return np.array(sequences), self.video_frame_provider.get_current_video_name()
 
 
 # def get_dump_data():
@@ -365,7 +398,13 @@ def get_triplets_parameters(path, path_to_ignore):
 
 def get_multisiamese_datasets(training_path, validation_path, epoch_size, batch_size):
     training_set = AngioSequenceMultiSiameseDataset(training_path, validation_path, 3, epoch_size, batch_size)
-    validation_set = AngioSequenceMultiSiameseDataset(validation_path, None, 3, round(epoch_size / 10), batch_size)
+    validation_set = None if validation_path is None else AngioSequenceMultiSiameseDataset(validation_path, None, 3, round(epoch_size / 10), batch_size)
+    return training_set, validation_set
+
+
+def get_soft_multisiamese_datasets(training_path, validation_path, epoch_size, batch_size):
+    training_set = AngioSequenceSoftMultiSiameseDataset(training_path, validation_path, 3, epoch_size, batch_size)
+    validation_set = None if validation_path is None else AngioSequenceSoftMultiSiameseDataset(validation_path, None, 3, round(epoch_size / 10), batch_size)
     return training_set, validation_set
 
 
@@ -382,20 +421,59 @@ def get_test_set(test_path):
 
 
 if __name__ == '__main__':
-    training_path = r'C:\Users\root\Data\Angiographie'
-    validation_path = r'C:\Users\root\Data\Angiographie\KR-11'
+    # training_path = r'C:\Users\root\Data\Angiographie'
+    # validation_path = r'C:\Users\root\Data\Angiographie\KR-11'
+    training_path = r'C:\Users\root\Data\Angiographie\AA-4'
+    validation_path = None
 
-    training_set, validation_set = get_multisiamese_datasets(training_path, validation_path, 1, 10)
+    # # Multisiamese
+    # training_set, validation_set = get_multisiamese_datasets(training_path, validation_path, 1, 10)
+    # training_dataloader = DataLoader(training_set, batch_size=1, shuffle=False, num_workers=0)
+    # for i_batch, data in enumerate(training_dataloader):
+    #     print(type(data))
+    #     sequences = data[0][0]
+    #     positive_matrix = data[1]
+    #     negative_matrix = data[2]
+    #     print("sequences", sequences.shape)
+    #     print("positive_matrix", positive_matrix)
+    #     print("negative_matrix", negative_matrix)
+
+    # # Soft Multisiamese
+    # training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_path, 1, 10)
+    # training_dataloader = DataLoader(training_set, batch_size=1, shuffle=False, num_workers=0)
+    # for i_batch, data in enumerate(training_dataloader):
+    #     print(type(data))
+    #     sequences = data[0][0]
+    #     similarity_matrix = data[1]
+    #     print("sequences", sequences.shape)
+    #     print("similarity_matrix", similarity_matrix)
+
+    # Optical Flow tests using Soft Multisiamese
+    training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_path, 1, 10)
     training_dataloader = DataLoader(training_set, batch_size=1, shuffle=False, num_workers=0)
-    # for sequences, positive_matrix, negative_matrix in training_set:
     for i_batch, data in enumerate(training_dataloader):
-        print(type(data))
         sequences = data[0][0]
-        positive_matrix = data[1]
-        negative_matrix = data[2]
-        print("sequences", sequences.shape)
-        print("positive_matrix", positive_matrix)
-        print("negative_matrix", negative_matrix)
+
+        # # Optical Flow 1
+        # plt.subplot(1, 4, 1)
+        # plt.imshow(sequences[0].permute(1, 2, 0))
+        # plt.subplot(1, 4, 2)
+        # u, v = optical_flow(sequences[0][0], sequences[0][2], 4)
+        # plt.imshow(np.stack([u, v, np.zeros(u.shape)], axis=2))
+        # plt.subplot(1, 4, 3)
+        # u, v = optical_flow(sequences[0][0], sequences[0][2], 8)
+        # plt.imshow(np.stack([u, v, np.zeros(u.shape)], axis=2))
+        # plt.subplot(1, 4, 4)
+        # u, v = optical_flow(sequences[0][0], sequences[0][2], 12)
+        # plt.imshow(np.stack([u, v, np.zeros(u.shape)], axis=2))
+        # plt.show()
+
+        # Optical Flow 2
+        plt.subplot(1, 2, 1)
+        plt.imshow(sequences[0].permute(1, 2, 0))
+        of = optical_flow2(sequences[0][0], sequences[0][2])
+        print(of.shape)
+        plt.imshow(of)
 
     # training_set, validation_set = get_datasets(training_path, validation_path)
     # training_dataloader = DataLoader(training_set, batch_size=4, shuffle=True, num_workers=4)

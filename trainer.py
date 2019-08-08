@@ -113,8 +113,10 @@ def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, met
 
         loss_inputs = outputs
 
-        if multisiamese_mode:
+        if multisiamese_mode == 'hard':
             loss_outputs = loss_fn(*loss_inputs, positive_matrix, negative_matrix)
+        elif multisiamese_mode == 'soft':
+            loss_outputs = loss_fn(*loss_inputs, positive_matrix)
         else:
             loss_outputs = loss_fn(*loss_inputs)
         loss = loss_outputs[0] if type(loss_outputs) in (tuple, list) else loss_outputs
@@ -163,8 +165,10 @@ def test_epoch(val_loader, model, loss_fn, cuda, metrics):
                 outputs = (outputs,)
             loss_inputs = outputs
 
-            if multisiamese_mode:
+            if multisiamese_mode == 'hard':
                 loss_outputs = loss_fn(*loss_inputs, positive_matrix, negative_matrix)
+            elif multisiamese_mode == 'soft':
+                loss_outputs = loss_fn(*loss_inputs, positive_matrix)
             else:
                 loss_outputs = loss_fn(*loss_inputs)
             loss = loss_outputs[0] if type(loss_outputs) in (tuple, list) else loss_outputs
@@ -177,10 +181,14 @@ def test_epoch(val_loader, model, loss_fn, cuda, metrics):
 
 
 def reformat_data(data, cuda):
-    multisiamese_mode = False
+    multisiamese_mode = None
     positive_matrix = negative_matrix = None
     if not type(data) in (tuple, list):
         data = (data,)
+    elif len(data) == 2:
+        multisiamese_mode = 'soft'
+        positive_matrix = data[1]
+        data = data[0]
     elif len(data) == 3:
         # print(data)
         # print(len(data[0].shape))
@@ -194,7 +202,7 @@ def reformat_data(data, cuda):
             data = (data,)
 
         elif len(data[0].shape) == 5:  # data = (sequences, positive_matrix, negative_matrix)
-            multisiamese_mode = True
+            multisiamese_mode = 'hard'
             positive_matrix = data[1]
             negative_matrix = data[2]
             data = data[0]

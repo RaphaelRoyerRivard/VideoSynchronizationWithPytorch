@@ -170,6 +170,38 @@ class MultiSiameseCosineSimilarityLoss(nn.Module):
         return loss, average_positive_similarity, average_negative_similarity
 
 
+class SoftMultiSiameseCosineSimilarityLoss(nn.Module):
+    """
+    Soft Multi Siamese Similarity loss
+    Takes a batch of embeddings to computes the cosine similarity for each pair and compare it with the pair similarity
+    matrix (ground truth).
+    Useful to get a loss over several pairs with few images.
+    """
+
+    """
+    Parameters
+    embeddings: matrix of size (batch_size, embedding_size)
+    similarity_matrix: matrix of pair similarity of size (batch_size, batch_size)
+    
+    Returns
+    loss: scalar between 0 and 1 where 0 represents perfect pair similarity while 1 is the opposite.
+    """
+    def forward(self, embeddings, similarity_matrix):
+        batch_size, embedding_size = embeddings.shape
+
+        # normalize embeddings
+        normalized_embeddings = embeddings / torch.norm(embeddings, dim=-1).view(batch_size, 1)
+
+        # calculate cosine similarity for every combination
+        cosine_similarities = torch.bmm(normalized_embeddings.view(1, batch_size, embedding_size),
+                                        normalized_embeddings.t().view(1, embedding_size, batch_size)).cpu()
+
+        # we want the similarity to be between 0 (dissimilar) to 1 (similar)
+        cosine_similarities = (cosine_similarities + 1) / 2
+
+        return torch.abs(cosine_similarities - similarity_matrix).mean()
+
+
 class TripletNet(nn.Module):
     """
     https://github.com/adambielski/siamese-triplet/blob/master/networks.py

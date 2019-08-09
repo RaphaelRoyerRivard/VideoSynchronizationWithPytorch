@@ -173,7 +173,7 @@ class AngioSequenceMultiSiameseDataset(Dataset):
         self._calc_all_positive_and_negative_pairs()
 
     def _calc_all_positive_and_negative_pairs(self):
-        from matplotlib import pyplot as plt
+        # from matplotlib import pyplot as plt
         self.frame_pairs = []
         video_count = self.video_frame_provider.video_count()
         for video_id in range(video_count):
@@ -196,14 +196,16 @@ class AngioSequenceMultiSiameseDataset(Dataset):
                     a = i % hb_freq
                     b = j % hb_freq
                     frame_diff = abs(a - b)
-                    if frame_diff >= min_pos_dist or frame_diff <= max_pos_dist:
+                    frame_diff = min(frame_diff, hb_freq - frame_diff)
+                    # if frame_diff >= min_pos_dist or frame_diff <= max_pos_dist:
+                    if frame_diff == 1:
                         video_frame_pairs[i][j] = video_frame_pairs[j][i] = 1
                     elif min_neg_dist <= frame_diff <= max_neg_dist:
                         video_frame_pairs[i][j] = video_frame_pairs[j][i] = -1
             # print(video_frame_pairs)
             self.frame_pairs.append(video_frame_pairs)
-            plt.imshow(video_frame_pairs)
-            plt.show()
+            # plt.imshow(video_frame_pairs)
+            # plt.show()
 
     def __len__(self):
         return self.epoch_size
@@ -333,7 +335,7 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
                     frame_sequence.append(self.video_frame_provider.get_current_video_frame(frame_a_index - sequence_index))
                 frame_sequences.append(frame_sequence)
 
-            yield np.array(frame_sequences), similarity_matrix
+            yield np.array(frame_sequences), similarity_matrix, frame_indices
 
 
 class AngioSequenceTestDataset(Dataset):
@@ -358,42 +360,12 @@ class AngioSequenceTestDataset(Dataset):
         return np.array(sequences), self.video_frame_provider.get_current_video_name()
 
 
-# def get_dump_data():
-#     indices = list(range(sequence*3))
-#
-#     augmentors = [
-#         imgaug.Brightness(30, clip=True),
-#         imgaug.GaussianNoise(sigma=10),
-#         imgaug.Contrast((0.8, 1.2), clip=False),
-#         imgaug.Clip(),
-#         imgaug.Flip(horiz=True),
-#         imgaug.Flip(vert=True),
-#     ]
-#
-#     df = AugmentImageComponents(df, augmentors, copy=False, index=indices)
-#     df = AugmentImageComponents(df, [imgaug.Rotation(7)], copy=False, index=indices)
-#
-#     augmentors = [
-#         imgaug.ToUint8(),
-#         imgaug.Resize((224, 224))
-#     ]
-#
-#     df = AugmentImageComponents(df, augmentors, copy=False, index=indices)
-#
-#     return dt
-
-
 def get_triplets_parameters(path, path_to_ignore):
     return {
         'path': path,
         'path_to_ignore': path_to_ignore,
         'sequence': 3
     }
-
-
-# def get_initialized_triplet_selector():
-#     params = get_triplets_parameters()
-#     return AllTripletSelector(**params)
 
 
 def get_multisiamese_datasets(training_path, validation_path, epoch_size, batch_size):
@@ -420,10 +392,33 @@ def get_test_set(test_path):
     return AngioSequenceTestDataset(test_path)
 
 
+def get_frame_indices_of_most_distant_similar_pair_with_randomness(similarity_matrix, real_frame_indices):
+    size = similarity_matrix.shape[0]
+    i = np.random.randint(0, size)
+    print("i", i)
+    print(similarity_matrix[i])
+    possible_j = np.array([j for j in range(size) if similarity_matrix[i][j] == 1])
+    print("possible j", possible_j)
+    diff = np.array([np.abs(real_frame_indices[j] - real_frame_indices[i]) for j in possible_j])
+    print("diff", diff)
+    j = possible_j[np.argmax(diff)]
+    print(f"Most distant similar pair: ({i}, {j})")
+    return i, j
+
+
+def show_superimposed_frames(sequences, i, j, real_frame_indices):
+    frame_i = sequences[i][0]
+    frame_j = sequences[j][0]
+    superposed_frames = torch.stack([frame_i, frame_j, torch.zeros(frame_i.shape)], dim=-1)
+    plt.imshow(superposed_frames)
+    plt.title(f"Comparison of similar frames ({real_frame_indices[i]}) and ({real_frame_indices[j]})")
+    plt.show()
+
+
 if __name__ == '__main__':
-    # training_path = r'C:\Users\root\Data\Angiographie'
+    training_path = r'C:\Users\root\Data\Angiographie'
     # validation_path = r'C:\Users\root\Data\Angiographie\KR-11'
-    training_path = r'C:\Users\root\Data\Angiographie\AA-4'
+    # training_path = r'C:\Users\root\Data\Angiographie\AA-4'
     validation_path = None
 
     # # Multisiamese
@@ -438,42 +433,46 @@ if __name__ == '__main__':
     #     print("positive_matrix", positive_matrix)
     #     print("negative_matrix", negative_matrix)
 
-    # # Soft Multisiamese
+    # Soft Multisiamese
+    training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_path, 1000, 64)
+    training_dataloader = DataLoader(training_set, batch_size=1, shuffle=False, num_workers=0)
+    for i_batch, data in enumerate(training_dataloader):
+        print(type(data))
+        sequences = data[0][0]
+        similarity_matrix = data[1][0]
+        frame_indices = data[2][0]
+        print("sequences", sequences.shape)
+        print("similarity_matrix", similarity_matrix.shape)
+        print(frame_indices)
+        i, j = get_frame_indices_of_most_distant_similar_pair_with_randomness(similarity_matrix, frame_indices)
+        show_superimposed_frames(sequences, i, j, frame_indices)
+
+    # # Optical Flow tests using Soft Multisiamese
     # training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_path, 1, 10)
     # training_dataloader = DataLoader(training_set, batch_size=1, shuffle=False, num_workers=0)
     # for i_batch, data in enumerate(training_dataloader):
-    #     print(type(data))
     #     sequences = data[0][0]
-    #     similarity_matrix = data[1]
-    #     print("sequences", sequences.shape)
-    #     print("similarity_matrix", similarity_matrix)
-
-    # Optical Flow tests using Soft Multisiamese
-    training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_path, 1, 10)
-    training_dataloader = DataLoader(training_set, batch_size=1, shuffle=False, num_workers=0)
-    for i_batch, data in enumerate(training_dataloader):
-        sequences = data[0][0]
-
-        # # Optical Flow 1
-        # plt.subplot(1, 4, 1)
-        # plt.imshow(sequences[0].permute(1, 2, 0))
-        # plt.subplot(1, 4, 2)
-        # u, v = optical_flow(sequences[0][0], sequences[0][2], 4)
-        # plt.imshow(np.stack([u, v, np.zeros(u.shape)], axis=2))
-        # plt.subplot(1, 4, 3)
-        # u, v = optical_flow(sequences[0][0], sequences[0][2], 8)
-        # plt.imshow(np.stack([u, v, np.zeros(u.shape)], axis=2))
-        # plt.subplot(1, 4, 4)
-        # u, v = optical_flow(sequences[0][0], sequences[0][2], 12)
-        # plt.imshow(np.stack([u, v, np.zeros(u.shape)], axis=2))
-        # plt.show()
-
-        # Optical Flow 2
-        plt.subplot(1, 2, 1)
-        plt.imshow(sequences[0].permute(1, 2, 0))
-        of = optical_flow2(sequences[0][0], sequences[0][2])
-        print(of.shape)
-        plt.imshow(of)
+    #
+    #     # # Optical Flow 1
+    #     # plt.subplot(1, 4, 1)
+    #     # plt.imshow(sequences[0].permute(1, 2, 0))
+    #     # plt.subplot(1, 4, 2)
+    #     # u, v = optical_flow(sequences[0][0], sequences[0][2], 4)
+    #     # plt.imshow(np.stack([u, v, np.zeros(u.shape)], axis=2))
+    #     # plt.subplot(1, 4, 3)
+    #     # u, v = optical_flow(sequences[0][0], sequences[0][2], 8)
+    #     # plt.imshow(np.stack([u, v, np.zeros(u.shape)], axis=2))
+    #     # plt.subplot(1, 4, 4)
+    #     # u, v = optical_flow(sequences[0][0], sequences[0][2], 12)
+    #     # plt.imshow(np.stack([u, v, np.zeros(u.shape)], axis=2))
+    #     # plt.show()
+    #
+    #     # Optical Flow 2
+    #     plt.subplot(1, 2, 1)
+    #     plt.imshow(sequences[0].permute(1, 2, 0))
+    #     of = optical_flow2(sequences[0][0], sequences[0][2])
+    #     print(of.shape)
+    #     plt.imshow(of)
 
     # training_set, validation_set = get_datasets(training_path, validation_path)
     # training_dataloader = DataLoader(training_set, batch_size=4, shuffle=True, num_workers=4)

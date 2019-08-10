@@ -102,7 +102,7 @@ def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, met
     print("Will sample from train_loader")
     for batch_idx, data in enumerate(train_loader):
         # print("batch_idx", batch_idx, "data", data.shape, data.type())
-        data, multisiamese_mode, positive_matrix, negative_matrix = reformat_data(data, cuda)
+        data, multisiamese_mode, matrix_a, matrix_b = reformat_data(data, cuda)
 
         if measure_weights:
             fc_weights = model.module.embedding_net.fc.weight.cpu().data.numpy()
@@ -116,9 +116,13 @@ def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, met
         loss_inputs = outputs
 
         if multisiamese_mode == 'hard':
+            positive_matrix = matrix_a
+            negative_matrix = matrix_b
             loss_outputs = loss_fn(*loss_inputs, positive_matrix, negative_matrix)
         elif multisiamese_mode == 'soft':
-            loss_outputs = loss_fn(*loss_inputs, positive_matrix)
+            similarity_matrix = matrix_a
+            masks = matrix_b
+            loss_outputs = loss_fn(*loss_inputs, similarity_matrix, masks)
         else:
             loss_outputs = loss_fn(*loss_inputs)
         loss = loss_outputs[0] if type(loss_outputs) in (tuple, list) else loss_outputs
@@ -159,7 +163,7 @@ def test_epoch(val_loader, model, loss_fn, cuda, metrics):
         model.eval()
         val_loss = 0
         for batch_idx, data in enumerate(val_loader):
-            data, multisiamese_mode, positive_matrix, negative_matrix = reformat_data(data, cuda)
+            data, multisiamese_mode, matrix_a, matrix_b = reformat_data(data, cuda)
 
             outputs = model(*data)
 
@@ -168,9 +172,13 @@ def test_epoch(val_loader, model, loss_fn, cuda, metrics):
             loss_inputs = outputs
 
             if multisiamese_mode == 'hard':
+                positive_matrix = matrix_a
+                negative_matrix = matrix_b
                 loss_outputs = loss_fn(*loss_inputs, positive_matrix, negative_matrix)
             elif multisiamese_mode == 'soft':
-                loss_outputs = loss_fn(*loss_inputs, positive_matrix)
+                similarity_matrix = matrix_a
+                masks = matrix_b
+                loss_outputs = loss_fn(*loss_inputs, similarity_matrix, masks)
             else:
                 loss_outputs = loss_fn(*loss_inputs)
             loss = loss_outputs[0] if type(loss_outputs) in (tuple, list) else loss_outputs
@@ -184,7 +192,7 @@ def test_epoch(val_loader, model, loss_fn, cuda, metrics):
 
 def reformat_data(data, cuda):
     multisiamese_mode = None
-    positive_matrix = negative_matrix = None
+    matrix_a = matrix_b = None
     if not type(data) in (tuple, list):
         data = (data,)
     elif len(data) == 3:
@@ -192,7 +200,10 @@ def reformat_data(data, cuda):
         # print(len(data[0].shape))
         if type(data[-1]) is dict:
             multisiamese_mode = 'soft'
-            positive_matrix = data[1]
+            similarity_matrix = data[1][0]
+            masks = data[1][1]
+            matrix_a = similarity_matrix
+            matrix_b = masks
             data = data[0]
         elif len(data[0].shape) == 4:  # data = (triplet, batch, channels, width, height)
             # We want (batch, triplet, channels, width, height)
@@ -207,8 +218,10 @@ def reformat_data(data, cuda):
             multisiamese_mode = 'hard'
             positive_matrix = data[1]
             negative_matrix = data[2]
+            matrix_a = positive_matrix
+            matrix_b = negative_matrix
             data = data[0]
     if cuda:
         data = tuple(d.cuda() for d in data)
 
-    return data, multisiamese_mode, positive_matrix, negative_matrix
+    return data, multisiamese_mode, matrix_a, matrix_b

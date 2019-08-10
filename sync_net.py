@@ -182,11 +182,12 @@ class SoftMultiSiameseCosineSimilarityLoss(nn.Module):
     Parameters
     embeddings: matrix of size (batch_size, embedding_size)
     similarity_matrix: matrix of pair similarity of size (batch_size, batch_size)
+    masks: matrix of masks of size (batch_size, batch_size) to consider only some pairs
     
     Returns
     loss: scalar between 0 and 1 where 0 represents perfect pair similarity while 1 is the opposite.
     """
-    def forward(self, embeddings, similarity_matrix):
+    def forward(self, embeddings, similarity_matrix, masks):
         batch_size, embedding_size = embeddings.shape
 
         # normalize embeddings
@@ -199,6 +200,11 @@ class SoftMultiSiameseCosineSimilarityLoss(nn.Module):
         # we want the similarity to be between 0 (dissimilar) to 1 (similar)
         cosine_similarities = (cosine_similarities + 1) / 2
 
+        # apply the masks to ignore some pairs
+        cosine_similarities *= masks
+        similarity_matrix *= masks
+
+        # TODO fix the mean to not consider the masked values
         return torch.abs(cosine_similarities - similarity_matrix).mean()
 
 

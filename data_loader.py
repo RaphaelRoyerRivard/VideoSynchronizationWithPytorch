@@ -265,7 +265,7 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
     """
     Yield matrices of similarity between pairs
     """
-    def __init__(self, path, path_to_ignore, sequence, epoch_size, batch_size):
+    def __init__(self, path, path_to_ignore, sequence, max_cycles_for_pairs, epoch_size, batch_size):
         """
         Sample most trivial training data for phase 0 (intra-video sampling of consecutive frames)
 
@@ -275,18 +275,21 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
         self.files, self.names = get_all_valid_frames_in_path(path, path_to_ignore)
         self.video_frame_provider = VideoFrameProvider(images=self.files, names=self.names)
         self.sequence = sequence
+        self.max_cycles_for_pairs = max_cycles_for_pairs
         self.epoch_size = epoch_size
         self.batch_size = batch_size
         self._calc_similarity_between_all_pairs()
 
     def _calc_similarity_between_all_pairs(self):
-        self.frame_pairs = []
+        self.frame_pair_values = []
+        self.frame_pair_masks = []
         video_count = self.video_frame_provider.video_count()
         for video_id in range(video_count):
             # print("video", video_id)
             self.video_frame_provider.select_video(video_id)
             video_frame_count = self.video_frame_provider.get_current_video_frame_count()
-            video_frame_pairs = np.zeros((video_frame_count, video_frame_count))
+            video_frame_pair_values = np.zeros((video_frame_count, video_frame_count))
+            video_frame_pair_masks = np.zeros((video_frame_count, video_frame_count))
             hb_freq = self.video_frame_provider.get_current_video_heartbeat_frequency()
             for i in range(video_frame_count):
                 for j in range(i+1, video_frame_count):
@@ -294,8 +297,10 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
                     b = j % hb_freq
                     frame_diff = abs(a - b)
                     frame_diff = min(frame_diff, hb_freq - frame_diff)
-                    video_frame_pairs[i][j] = video_frame_pairs[j][i] = 1 - frame_diff / (hb_freq / 2)
-            self.frame_pairs.append(video_frame_pairs)
+                    video_frame_pair_values[i][j] = video_frame_pair_values[j][i] = 1 - frame_diff / (hb_freq / 2)
+                    video_frame_pair_masks[i][j] = video_frame_pair_masks[j][i] = 1 if self.max_cycles_for_pairs == 0 or abs(i - j) <= hb_freq * self.max_cycles_for_pairs else 0
+            self.frame_pair_values.append(video_frame_pair_values)
+            self.frame_pair_masks.append(video_frame_pair_masks)
 
     def __len__(self):
         return self.epoch_size
@@ -319,16 +324,21 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
                 # Randomly select frames in our video based on the batch size
                 frame_indices = np.random.choice(possible_frames, self.batch_size, replace=False)
                 similarity_matrix = np.zeros((self.batch_size, self.batch_size), dtype=np.float32)
+                masks = np.zeros((self.batch_size, self.batch_size), dtype=np.float32)
             else:
                 frame_indices = possible_frames
                 similarity_matrix = np.zeros((possible_frames_count, possible_frames_count), dtype=np.float32)
+                masks = np.zeros((possible_frames_count, possible_frames_count), dtype=np.float32)
 
             frame_sequences = []
             # Compare every frame to create the positive and negative matrices
             for i, frame_a_index in enumerate(frame_indices):
                 for j in range(i+1, len(frame_indices)):
-                    pair_value = self.frame_pairs[video_id][frame_a_index, frame_indices[j]]
+                    frame_b_index = frame_indices[j]
+                    pair_value = self.frame_pair_values[video_id][frame_a_index, frame_b_index]
+                    pair_mask = self.frame_pair_masks[video_id][frame_a_index, frame_b_index]
                     similarity_matrix[i, j] = similarity_matrix[j, i] = pair_value
+                    masks[i, j] = masks[j, i] = pair_mask
 
                 # Create frame sequence
                 frame_sequence = []
@@ -336,7 +346,7 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
                     frame_sequence.append(self.video_frame_provider.get_current_video_frame(frame_a_index - sequence_index))
                 frame_sequences.append(frame_sequence)
 
-            yield np.array(frame_sequences), similarity_matrix, {"frame_indices": frame_indices, "video_name": self.video_frame_provider.get_current_video_name()}
+            yield np.array(frame_sequences), (similarity_matrix, masks), {"frame_indices": frame_indices, "video_name": self.video_frame_provider.get_current_video_name()}
 
 
 class AngioSequenceTestDataset(Dataset):
@@ -375,9 +385,10 @@ def get_multisiamese_datasets(training_path, validation_path, epoch_size, batch_
     return training_set, validation_set
 
 
-def get_soft_multisiamese_datasets(training_path, validation_path, epoch_size, batch_size):
-    training_set = AngioSequenceSoftMultiSiameseDataset(training_path, validation_path, 3, epoch_size, batch_size)
-    validation_set = None if validation_path is None else AngioSequenceSoftMultiSiameseDataset(validation_path, None, 3, round(epoch_size / 10), batch_size)
+def get_soft_multisiamese_datasets(training_path, validation_path, max_cycles_for_pairs, epoch_size, batch_size):
+    sequence = 3
+    training_set = AngioSequenceSoftMultiSiameseDataset(training_path, validation_path, sequence, max_cycles_for_pairs, epoch_size, batch_size)
+    validation_set = None if validation_path is None else AngioSequenceSoftMultiSiameseDataset(validation_path, None, sequence, max_cycles_for_pairs, round(epoch_size / 10), batch_size)
     return training_set, validation_set
 
 
@@ -393,12 +404,14 @@ def get_test_set(test_path):
     return AngioSequenceTestDataset(test_path)
 
 
-def get_frame_indices_of_most_distant_similar_pair_with_randomness(similarity_matrix, real_frame_indices):
+def get_frame_indices_of_most_distant_similar_pair_with_randomness(similarity_matrix, masks, real_frame_indices):
     size = similarity_matrix.shape[0]
     i = np.random.randint(0, size)
     print("i", i)
     print(similarity_matrix[i])
-    possible_j = np.array([j for j in range(size) if similarity_matrix[i][j] == 1])
+    possible_j = np.array([j for j in range(size) if similarity_matrix[i, j] == 1 and masks[i, j] == 1])
+    if len(possible_j) == 0:
+        return i, -1
     print("possible j", possible_j)
     diff = np.array([np.abs(real_frame_indices[j] - real_frame_indices[i]) for j in possible_j])
     print("diff", diff)
@@ -408,6 +421,8 @@ def get_frame_indices_of_most_distant_similar_pair_with_randomness(similarity_ma
 
 
 def show_superimposed_frames(sequences, i, j, real_frame_indices, video_name):
+    if j < 0:
+        return
     frame_i = sequences[i][0]
     frame_j = sequences[j][0]
     superposed_frames = torch.stack([frame_i, frame_j, torch.zeros(frame_i.shape)], dim=-1)
@@ -435,22 +450,26 @@ if __name__ == '__main__':
     #     print("negative_matrix", negative_matrix)
 
     # Soft Multisiamese
-    training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_path, 1000, 64)
+    max_cycle_for_pairs = 0
+    training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_path, max_cycle_for_pairs, 1000, 64)
     training_dataloader = DataLoader(training_set, batch_size=1, shuffle=False, num_workers=0)
     for i_batch, data in enumerate(training_dataloader):
         print(type(data))
         sequences = data[0][0]
-        similarity_matrix = data[1][0]
+        similarity_matrix = data[1][0][0]
+        masks = data[1][1][0]
         frame_indices = data[2]["frame_indices"][0]
         video_name = data[2]["video_name"][0]
         print("sequences", sequences.shape)
         print("similarity_matrix", similarity_matrix.shape)
+        print("masks", masks.shape)
         print(frame_indices)
-        i, j = get_frame_indices_of_most_distant_similar_pair_with_randomness(similarity_matrix, frame_indices)
+        i, j = get_frame_indices_of_most_distant_similar_pair_with_randomness(similarity_matrix, masks, frame_indices)
         show_superimposed_frames(sequences, i, j, frame_indices, video_name)
 
     # # Optical Flow tests using Soft Multisiamese
-    # training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_path, 1, 10)
+    # max_cycle_for_pairs = 0
+    # training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_path, max_cycle_for_pairs, 1, 10)
     # training_dataloader = DataLoader(training_set, batch_size=1, shuffle=False, num_workers=0)
     # for i_batch, data in enumerate(training_dataloader):
     #     sequences = data[0][0]

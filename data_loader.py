@@ -74,7 +74,9 @@ def get_all_valid_frames_in_path(base_path, path_to_ignore):
                 img = cv2.resize(img, (224, 224))
                 img = img.astype(np.float32)
                 img /= 255
-                valid_frames.append(img)
+                valid_frames.append((frame_id, img))
+        valid_frames.sort()
+        valid_frames = [x[1] for x in valid_frames]
         all_valid_frames.append((valid_frames, freq))
         print(len(valid_frames), "valid frames in", path)
     return all_valid_frames, video_names
@@ -173,7 +175,6 @@ class AngioSequenceMultiSiameseDataset(Dataset):
         self._calc_all_positive_and_negative_pairs()
 
     def _calc_all_positive_and_negative_pairs(self):
-        # from matplotlib import pyplot as plt
         self.frame_pairs = []
         video_count = self.video_frame_provider.video_count()
         for video_id in range(video_count):
@@ -257,7 +258,7 @@ class AngioSequenceMultiSiameseDataset(Dataset):
                 frame_sequences.append(frame_sequence)
 
             # yield torch.FloatTensor(frame_sequences), torch.from_numpy(positive_matrix), torch.from_numpy(negative_matrix)
-            yield np.array(frame_sequences), positive_matrix, negative_matrix
+            yield np.array(frame_sequences), positive_matrix, negative_matrix, self.video_frame_provider.get_current_video_name()
 
 
 class AngioSequenceSoftMultiSiameseDataset(Dataset):
@@ -335,7 +336,7 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
                     frame_sequence.append(self.video_frame_provider.get_current_video_frame(frame_a_index - sequence_index))
                 frame_sequences.append(frame_sequence)
 
-            yield np.array(frame_sequences), similarity_matrix, frame_indices
+            yield np.array(frame_sequences), similarity_matrix, {"frame_indices": frame_indices, "video_name": self.video_frame_provider.get_current_video_name()}
 
 
 class AngioSequenceTestDataset(Dataset):
@@ -406,12 +407,12 @@ def get_frame_indices_of_most_distant_similar_pair_with_randomness(similarity_ma
     return i, j
 
 
-def show_superimposed_frames(sequences, i, j, real_frame_indices):
+def show_superimposed_frames(sequences, i, j, real_frame_indices, video_name):
     frame_i = sequences[i][0]
     frame_j = sequences[j][0]
     superposed_frames = torch.stack([frame_i, frame_j, torch.zeros(frame_i.shape)], dim=-1)
     plt.imshow(superposed_frames)
-    plt.title(f"Comparison of similar frames ({real_frame_indices[i]}) and ({real_frame_indices[j]})")
+    plt.title(f"Comparison of farthest similar valid frames {real_frame_indices[i]} and {real_frame_indices[j]} ({video_name})")
     plt.show()
 
 
@@ -440,12 +441,13 @@ if __name__ == '__main__':
         print(type(data))
         sequences = data[0][0]
         similarity_matrix = data[1][0]
-        frame_indices = data[2][0]
+        frame_indices = data[2]["frame_indices"][0]
+        video_name = data[2]["video_name"][0]
         print("sequences", sequences.shape)
         print("similarity_matrix", similarity_matrix.shape)
         print(frame_indices)
         i, j = get_frame_indices_of_most_distant_similar_pair_with_randomness(similarity_matrix, frame_indices)
-        show_superimposed_frames(sequences, i, j, frame_indices)
+        show_superimposed_frames(sequences, i, j, frame_indices, video_name)
 
     # # Optical Flow tests using Soft Multisiamese
     # training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_path, 1, 10)

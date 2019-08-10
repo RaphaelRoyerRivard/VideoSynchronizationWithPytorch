@@ -58,16 +58,17 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
         print(message)
 
         if save_progress_path is not None:
-            state = {
-                'epoch': epoch,
-                'model': model.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'scheduler': scheduler.state_dict()
-            }
-            torch.save(state, save_progress_path + rf"\training_state_{epoch}.pth")
+            if len(val_losses) <= 1 or val_losses[-1] > np.max(np.array(val_losses[:-1])):
+                state = {
+                    'epoch': epoch,
+                    'model': model.state_dict(),
+                    'optimizer': optimizer.state_dict(),
+                    'scheduler': scheduler.state_dict()
+                }
+                torch.save(state, save_progress_path + rf"\training_state_{epoch}.pth")
 
-            with open(save_progress_path + "/progress.txt", "a") as progres_file:
-                progres_file.write(message + "\n\n")
+                with open(save_progress_path + "/progress.txt", "a") as progres_file:
+                    progres_file.write(message + "\n\n")
 
         if epoch > 0:
             plt.plot(train_losses, color='orange', label='train_loss')
@@ -81,6 +82,7 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
     if save_progress_path is not None:
         plt.plot(train_losses, color='orange', label='train_loss')
         plt.plot(val_losses, color='green', label='val_loss')
+        plt.axvline(np.argmin(np.array(val_losses)), color='red')
         plt.title("Loss progression")
         plt.xlabel("Epoch")
         plt.ylabel("Loss")
@@ -185,14 +187,14 @@ def reformat_data(data, cuda):
     positive_matrix = negative_matrix = None
     if not type(data) in (tuple, list):
         data = (data,)
-    elif len(data) == 2:
-        multisiamese_mode = 'soft'
-        positive_matrix = data[1]
-        data = data[0]
     elif len(data) == 3:
         # print(data)
         # print(len(data[0].shape))
-        if len(data[0].shape) == 4:  # data = (triplet, batch, channels, width, height)
+        if type(data[-1]) is dict:
+            multisiamese_mode = 'soft'
+            positive_matrix = data[1]
+            data = data[0]
+        elif len(data[0].shape) == 4:  # data = (triplet, batch, channels, width, height)
             # We want (batch, triplet, channels, width, height)
             data = torch.stack(data)
             data = data.permute(1, 0, *list(range(2, len(data.shape))))

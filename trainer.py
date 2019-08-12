@@ -58,7 +58,8 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
         print(message)
 
         if save_progress_path is not None:
-            if len(val_losses) <= 1 or val_losses[-1] > np.max(np.array(val_losses[:-1])):
+            if len(val_losses) <= 1 or val_losses[-1] < np.min(np.array(val_losses[:-1])):
+                print("Saving model weights")
                 state = {
                     'epoch': epoch,
                     'model': model.state_dict(),

@@ -204,8 +204,10 @@ class SoftMultiSiameseCosineSimilarityLoss(nn.Module):
         cosine_similarities *= masks
         similarity_matrix *= masks
 
-        # TODO fix the mean to not consider the masked values
-        return torch.abs(cosine_similarities - similarity_matrix).mean()
+        diff = torch.abs(cosine_similarities - similarity_matrix)
+        nonzero = torch.nonzero(diff)
+        count = nonzero.shape[0]
+        return diff.sum() / count if count > 0 else 0
 
 
 class TripletNet(nn.Module):

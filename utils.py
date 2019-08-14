@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 from scipy import signal
+import torch
 
 
 def optical_flow(I1g, I2g, window_size, tau=1e-2):
@@ -63,3 +64,24 @@ def optical_flow2(frame1, frame2):
     # cv2.imwrite('opticalhsv.png', bgr)
 
     return bgr
+
+
+def pairwise_distances(x, y=None):
+    """
+    Code taken from https://discuss.pytorch.org/t/efficient-distance-matrix-computation/9065/3
+    Input: x is a Nxd matrix
+           y is an optional Mxd matrix
+    Output: dist is a NxM matrix where dist[i,j] is the square norm between x[i,:] and y[j,:]
+            if y is not given then use 'y=x'.
+    i.e. dist[i,j] = ||x[i,:]-y[j,:]||^2
+    """
+    x_norm = (x**2).sum(1).view(-1, 1)
+    if y is not None:
+        y_t = torch.transpose(y, 0, 1)
+        y_norm = (y**2).sum(1).view(1, -1)
+    else:
+        y_t = torch.transpose(x, 0, 1)
+        y_norm = x_norm.view(1, -1)
+
+    dist = x_norm + y_norm - 2.0 * torch.mm(x, y_t)
+    return torch.clamp(dist, 0.0, np.inf)

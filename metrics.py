@@ -101,3 +101,29 @@ class EmbeddingCosineSimilarityMetric(Metric):
             average_positive_similarity = average_positive_similarity.item()
             average_negative_similarity = average_negative_similarity.item()
         return digit_precision(average_positive_similarity, 3), digit_precision(average_negative_similarity, 3)
+
+
+class EmbeddingCosineSimilarityAndDistanceLossMetric(Metric):
+    def __init__(self):
+        self.batches = []
+
+    def __call__(self, outputs, loss_outputs):
+        self.batches.append((loss_outputs[1], loss_outputs[2]))  # positive similarity, negative similarity
+
+    def reset(self):
+        self.batches = []
+
+    def name(self):
+        return self.__class__.__name__ + " (sim-, dist-)"
+
+    def value(self):
+        if len(self.batches) == 0:
+            return 0, 0
+        sim = 0
+        dist = 0
+        for batch in self.batches:
+            sim += batch[0]
+            dist += batch[1]
+        avg_sim = sim / len(self.batches)
+        avg_dist = dist / len(self.batches)
+        return digit_precision(avg_sim, 3), digit_precision(avg_dist, 3)

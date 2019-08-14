@@ -344,6 +344,12 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
                 frame_sequence = []
                 for sequence_index in reversed(range(self.sequence)):
                     frame_sequence.append(self.video_frame_provider.get_current_video_frame(frame_a_index - sequence_index))
+
+                # Duplicate frame to have a gray RBG image
+                if self.sequence == 1:
+                    frame_sequence.append(frame_sequence[0])
+                    frame_sequence.append(frame_sequence[0])
+
                 frame_sequences.append(frame_sequence)
 
             yield np.array(frame_sequences), (similarity_matrix, masks), {"frame_indices": frame_indices, "video_name": self.video_frame_provider.get_current_video_name()}
@@ -385,8 +391,7 @@ def get_multisiamese_datasets(training_path, validation_path, epoch_size, batch_
     return training_set, validation_set
 
 
-def get_soft_multisiamese_datasets(training_path, validation_path, max_cycles_for_pairs, epoch_size, batch_size):
-    sequence = 3
+def get_soft_multisiamese_datasets(training_path, validation_path, max_cycles_for_pairs, sequence, epoch_size, batch_size):
     training_set = AngioSequenceSoftMultiSiameseDataset(training_path, validation_path, sequence, max_cycles_for_pairs, epoch_size, batch_size)
     validation_set = None if validation_path is None else AngioSequenceSoftMultiSiameseDataset(validation_path, None, sequence, max_cycles_for_pairs, round(epoch_size / 10), batch_size)
     return training_set, validation_set
@@ -451,6 +456,7 @@ if __name__ == '__main__':
 
     # Soft Multisiamese
     max_cycle_for_pairs = 0
+    sequence = 3
     training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_path, max_cycle_for_pairs, 1000, 64)
     training_dataloader = DataLoader(training_set, batch_size=1, shuffle=False, num_workers=0)
     for i_batch, data in enumerate(training_dataloader):

@@ -10,6 +10,7 @@ from itertools import combinations
 from data_loader import get_datasets
 from trainer import fit
 from torch.utils.data import DataLoader
+from utils import pairwise_distances
 cuda = torch.cuda.is_available()
 
 
@@ -207,7 +208,21 @@ class SoftMultiSiameseCosineSimilarityLoss(nn.Module):
         diff = torch.abs(cosine_similarities - similarity_matrix)
         nonzero = torch.nonzero(diff)
         count = nonzero.shape[0]
-        return diff.sum() / count if count > 0 else 0
+        similarity_loss = diff.sum() / count if count > 0 else 0
+
+        # if embedding_size == 2:
+        #     # TODO apply the mask on the distance loss
+        #     # margin = 0.5
+        #     # distances = pairwise_distances(embeddings).cpu()
+        #     #
+        #     # distance_loss = torch.where(similarity_matrix >= 0, distances * similarity_matrix, torch.clamp((distances - margin) * similarity_matrix, min=0.)).mean()
+        #     #
+        #     # return similarity_loss + distance_loss, similarity_loss, distance_loss
+        #
+        #     length_loss = torch.abs(1 - torch.norm(embeddings, dim=-1)).mean().cpu()
+        #     return similarity_loss + length_loss, similarity_loss, length_loss
+
+        return similarity_loss, similarity_loss, 0
 
 
 class TripletNet(nn.Module):

@@ -78,7 +78,7 @@ def get_all_valid_frames_in_path(base_path, path_to_ignore):
         valid_frames.sort()
         valid_frames = [x[1] for x in valid_frames]
         all_valid_frames.append((valid_frames, freq))
-        print(len(valid_frames), "valid frames in", path)
+        print(len(valid_frames), f"valid frames [{first_frame}, {last_frame}] @{freq} in", path)
     return all_valid_frames, video_names
 
 

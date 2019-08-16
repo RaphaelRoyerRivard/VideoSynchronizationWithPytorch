@@ -85,3 +85,43 @@ def pairwise_distances(x, y=None):
 
     dist = x_norm + y_norm - 2.0 * torch.mm(x, y_t)
     return torch.clamp(dist, 0.0, np.inf)
+
+
+class Node:
+    def __init__(self, point, cost, parent=None):
+        self.point = point
+        self.cost = cost
+        self.parent = parent
+
+
+def pathfinding(matrix, hb_freq):
+    print("Matrix shape", matrix.shape)
+
+    # Find the starting point
+    starting_point = (0, matrix[0][:hb_freq].argmin())
+    print("Starting point", starting_point)
+
+    current_node = Node(starting_point, 0)
+    closed_nodes = {}
+    opened_nodes = []
+
+    # Iterate through the matrix while our current node has not reached an edge
+    while current_node.point[0] < matrix.shape[0] - 1 and current_node.point[1] < matrix.shape[1] - 1:
+        # If the current point has not already been explored or if it has a lower cost
+        if current_node.point not in closed_nodes or current_node.cost < closed_nodes[current_node.point]:
+            # Put the current node in the closed set
+            closed_nodes[current_node.point] = current_node.cost
+            # Generate the neighbors
+            neighbors = [
+                (current_node.point[0] + 1, current_node.point[1]),     # move down
+                (current_node.point[0], current_node.point[1] + 1),     # move right
+                (current_node.point[0] + 1, current_node.point[1] + 1)  # move down right
+            ]
+            # Add the neighbors to the opened list
+            for neighbor in neighbors:
+                opened_nodes.append(Node(neighbor, current_node.cost + matrix[neighbor], current_node))
+            # Sort the opened list to find the node with the lowest cost
+            opened_nodes.sort(key=lambda x: x.cost)
+        # Get the lowest cost node
+        current_node = opened_nodes.pop(0)
+    return current_node

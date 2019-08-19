@@ -40,45 +40,51 @@ class VideoFrameProvider(object):
         return self.hb_frequencies[self.current_video_id]
 
 
-def get_all_valid_frames_in_path(base_path, path_to_ignore):
+def get_all_valid_frames_in_paths(base_paths, paths_to_ignore):
     all_valid_frames = []
     video_names = []
     relevant_frames_file_name = "relevant_frames.txt"
-    for path, subfolders, files in os.walk(base_path):
-        if path_to_ignore is not None and path_to_ignore in path:
-            continue
-        if path.split("\\")[-1] == "seg":
-            continue
-        if relevant_frames_file_name not in files:
-            continue
-
-        split_path = path.split("\\export\\")
-        angle = split_path[1]
-        patient = split_path[0].split("\\Angiographie\\")[1]
-        video_names.append(patient + ' ' + angle)
-
-        valid_frames = []
-        rfile = open(path + "/" + relevant_frames_file_name, "r")
-        line = rfile.readline()
-        rfile.close()
-        info = line.split(';')
-        first_frame = int(info[0])
-        last_frame = int(info[1])
-        freq = int(info[2])
-        for filename in files:
-            if not bool(re.search('.*Frame[0-9]+\.jpg', filename)):
+    for base_path in base_paths:
+        for path, subfolders, files in os.walk(base_path):
+            should_ignore = False
+            for path_to_ignore in paths_to_ignore:
+                if path_to_ignore is not None and path_to_ignore in path:
+                    should_ignore = True
+                    break
+            if should_ignore:
                 continue
-            frame_id = int(filename.split("Frame")[1].split('.')[0])
-            if first_frame <= frame_id <= last_frame:
-                img = cv2.imread(path + "/" + filename, cv2.IMREAD_GRAYSCALE)
-                img = cv2.resize(img, (224, 224))
-                img = img.astype(np.float32)
-                img /= 255
-                valid_frames.append((frame_id, img))
-        valid_frames.sort()
-        valid_frames = [x[1] for x in valid_frames]
-        all_valid_frames.append((valid_frames, freq))
-        print(len(valid_frames), f"valid frames [{first_frame}, {last_frame}] @{freq} in", path)
+            if path.split("\\")[-1] == "seg":
+                continue
+            if relevant_frames_file_name not in files:
+                continue
+
+            split_path = path.split("\\export\\")
+            angle = split_path[1]
+            patient = split_path[0].split("\\Angiographie\\")[1]
+            video_names.append(patient + ' ' + angle)
+
+            valid_frames = []
+            rfile = open(path + "/" + relevant_frames_file_name, "r")
+            line = rfile.readline()
+            rfile.close()
+            info = line.split(';')
+            first_frame = int(info[0])
+            last_frame = int(info[1])
+            freq = int(info[2])
+            for filename in files:
+                if not bool(re.search('.*Frame[0-9]+\.jpg', filename)):
+                    continue
+                frame_id = int(filename.split("Frame")[1].split('.')[0])
+                if first_frame <= frame_id <= last_frame:
+                    img = cv2.imread(path + "/" + filename, cv2.IMREAD_GRAYSCALE)
+                    img = cv2.resize(img, (224, 224))
+                    img = img.astype(np.float32)
+                    img /= 255
+                    valid_frames.append((frame_id, img))
+            valid_frames.sort()
+            valid_frames = [x[1] for x in valid_frames]
+            all_valid_frames.append((valid_frames, freq))
+            print(len(valid_frames), f"valid frames [{first_frame}, {last_frame}] @{freq} in", path)
     return all_valid_frames, video_names
 
 
@@ -106,7 +112,7 @@ class AngioSequenceTripletDataset(Dataset):
         Args:
             path (str): path in which we can find sequences of images
         """
-        self.files, self.names = get_all_valid_frames_in_path(path, path_to_ignore)
+        self.files, self.names = get_all_valid_frames_in_paths(path, path_to_ignore)
         self.video_frame_provider = VideoFrameProvider(images=self.files, names=self.names)
         self.sequence = sequence
         self._calc_all_triplets()
@@ -167,7 +173,7 @@ class AngioSequenceMultiSiameseDataset(Dataset):
         Args:
             path (str): path in which we can find sequences of images
         """
-        self.files, self.names = get_all_valid_frames_in_path(path, path_to_ignore)
+        self.files, self.names = get_all_valid_frames_in_paths(path, path_to_ignore)
         self.video_frame_provider = VideoFrameProvider(images=self.files, names=self.names)
         self.sequence = sequence
         self.epoch_size = epoch_size
@@ -265,14 +271,14 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
     """
     Yield matrices of similarity between pairs
     """
-    def __init__(self, path, path_to_ignore, sequence, max_cycles_for_pairs, epoch_size, batch_size):
+    def __init__(self, paths, path_to_ignores, sequence, max_cycles_for_pairs, epoch_size, batch_size):
         """
         Sample most trivial training data for phase 0 (intra-video sampling of consecutive frames)
 
         Args:
             path (str): path in which we can find sequences of images
         """
-        self.files, self.names = get_all_valid_frames_in_path(path, path_to_ignore)
+        self.files, self.names = get_all_valid_frames_in_paths(paths, path_to_ignores)
         self.video_frame_provider = VideoFrameProvider(images=self.files, names=self.names)
         self.sequence = sequence
         self.max_cycles_for_pairs = max_cycles_for_pairs
@@ -358,7 +364,7 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
 class AngioSequenceTestDataset(Dataset):
 
     def __init__(self, path):
-        self.files, self.names = get_all_valid_frames_in_path(path, None)
+        self.files, self.names = get_all_valid_frames_in_paths(path, None)
         self.video_frame_provider = VideoFrameProvider(images=self.files, names=self.names)
         self.sequence_length = 3
 
@@ -387,13 +393,15 @@ def get_triplets_parameters(path, path_to_ignore):
 
 def get_multisiamese_datasets(training_path, validation_path, epoch_size, batch_size):
     training_set = AngioSequenceMultiSiameseDataset(training_path, validation_path, 3, epoch_size, batch_size)
-    validation_set = None if validation_path is None else AngioSequenceMultiSiameseDataset(validation_path, None, 3, round(epoch_size / 10), batch_size)
+    validation_set = None if validation_path is None else AngioSequenceMultiSiameseDataset(validation_path, [], 3, round(epoch_size / 10), batch_size)
     return training_set, validation_set
 
 
-def get_soft_multisiamese_datasets(training_path, validation_path, max_cycles_for_pairs, sequence, epoch_size, batch_size):
-    training_set = AngioSequenceSoftMultiSiameseDataset(training_path, validation_path, sequence, max_cycles_for_pairs, epoch_size, batch_size)
-    validation_set = None if validation_path is None else AngioSequenceSoftMultiSiameseDataset(validation_path, None, sequence, max_cycles_for_pairs, round(epoch_size / 10), batch_size)
+def get_soft_multisiamese_datasets(training_paths, validation_paths, max_cycles_for_pairs, sequence, epoch_size, batch_size):
+    training_paths = [training_paths] if not type(training_paths) == list else training_paths
+    validation_paths = [validation_paths] if not type(validation_paths) == list else validation_paths
+    training_set = AngioSequenceSoftMultiSiameseDataset(training_paths, validation_paths, sequence, max_cycles_for_pairs, epoch_size, batch_size)
+    validation_set = None if validation_paths[0] is None else AngioSequenceSoftMultiSiameseDataset(validation_paths, [], sequence, max_cycles_for_pairs, round(epoch_size / 10), batch_size)
     return training_set, validation_set
 
 

@@ -14,6 +14,7 @@ class VideoFrameProvider(object):
         self.type = "images"
         self.frames = [x[0] for x in images]
         self.hb_frequencies = [x[1] for x in images]
+        self.contracted_frames = [x[2] for x in images]
         self.names = names
 
     def _get_videos(self):
@@ -38,6 +39,9 @@ class VideoFrameProvider(object):
 
     def get_current_video_heartbeat_frequency(self):
         return self.hb_frequencies[self.current_video_id]
+
+    def get_current_video_contracted_frame(self):
+        return self.contracted_frames[self.current_video_id]
 
 
 def get_all_valid_frames_in_paths(base_paths, paths_to_ignore):
@@ -71,6 +75,8 @@ def get_all_valid_frames_in_paths(base_paths, paths_to_ignore):
             first_frame = int(info[0])
             last_frame = int(info[1])
             freq = int(info[2])
+            contracted = int(info[3]) - first_frame
+            assert 0 <= contracted <= last_frame, f"Contracted frame of id {contracted} for {patient} - {angle} should be a valid frame between {first_frame} and {last_frame}"
             for filename in files:
                 if not bool(re.search('.*Frame[0-9]+\.jpg', filename)):
                     continue
@@ -83,8 +89,8 @@ def get_all_valid_frames_in_paths(base_paths, paths_to_ignore):
                     valid_frames.append((frame_id, img))
             valid_frames.sort()
             valid_frames = [x[1] for x in valid_frames]
-            all_valid_frames.append((valid_frames, freq))
-            print(len(valid_frames), f"valid frames [{first_frame}, {last_frame}] @{freq} in", path)
+            all_valid_frames.append((valid_frames, freq, contracted))
+            print(len(valid_frames), f"valid frames [{first_frame}, {last_frame}] @{freq} and contracted at index {contracted}, in", path)
     return all_valid_frames, video_names
 
 
@@ -271,42 +277,93 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
     """
     Yield matrices of similarity between pairs
     """
-    def __init__(self, paths, path_to_ignores, sequence, max_cycles_for_pairs, epoch_size, batch_size):
+    def __init__(self, paths, path_to_ignores, sequence, max_cycles_for_pairs, epoch_size, batch_size, inter_video_pairs):
         """
         Sample most trivial training data for phase 0 (intra-video sampling of consecutive frames)
 
         Args:
-            path (str): path in which we can find sequences of images
+            paths (list of str): paths in which we can find sequences of images
+            path_to_ignores (list of str): paths that will be ignored when searching for sequences of images
+            sequence (int): number of frames to use as input for the NN (use 0 to duplicate image in RGB channels, otherwise use 3)
+            max_cycles_for_pairs (float): Number of cycles to limit the pairs, the rest is masked
+            epoch_size (int): Number of matrices to sample per epoch
+            batch_size (int): Size of the sampled matrices
+            inter_video_pairs (bool): True to pair the frames of different videos together, False to limit to only intra-video pairs
         """
+        assert not inter_video_pairs or max_cycles_for_pairs == 0, "Cannot set a max cycles for pair when sampling pairs from different videos"
         self.files, self.names = get_all_valid_frames_in_paths(paths, path_to_ignores)
         self.video_frame_provider = VideoFrameProvider(images=self.files, names=self.names)
         self.sequence = sequence
         self.max_cycles_for_pairs = max_cycles_for_pairs
         self.epoch_size = epoch_size
         self.batch_size = batch_size
+        self.inter_video_pairs = inter_video_pairs
         self._calc_similarity_between_all_pairs()
 
     def _calc_similarity_between_all_pairs(self):
         self.frame_pair_values = []
         self.frame_pair_masks = []
         video_count = self.video_frame_provider.video_count()
-        for video_id in range(video_count):
-            # print("video", video_id)
-            self.video_frame_provider.select_video(video_id)
-            video_frame_count = self.video_frame_provider.get_current_video_frame_count()
-            video_frame_pair_values = np.zeros((video_frame_count, video_frame_count))
-            video_frame_pair_masks = np.zeros((video_frame_count, video_frame_count))
-            hb_freq = self.video_frame_provider.get_current_video_heartbeat_frequency()
-            for i in range(video_frame_count):
-                for j in range(i+1, video_frame_count):
+        if self.inter_video_pairs:
+            for video_a_id in range(video_count):
+                print(f"Computing pair similarities ({video_a_id+1}/{video_count})")
+                self.video_frame_provider.select_video(video_a_id)
+                video_a_frame_count = self.video_frame_provider.get_current_video_frame_count()
+                hb_freq_a = self.video_frame_provider.get_current_video_heartbeat_frequency()
+                contracted_frame_a = self.video_frame_provider.get_current_video_contracted_frame()
+                contracted_a = contracted_frame_a % hb_freq_a
+                # Loop through all videos (even the same one)
+                for video_b_id in range(video_a_id, video_count):
+                    self.video_frame_provider.select_video(video_b_id)
+                    video_b_frame_count = self.video_frame_provider.get_current_video_frame_count()
+                    hb_freq_b = self.video_frame_provider.get_current_video_heartbeat_frequency()
+                    contracted_frame_b = self.video_frame_provider.get_current_video_contracted_frame()
+                    contracted_b = contracted_frame_b % hb_freq_b
+                    video_frame_pair_values = np.zeros((video_a_frame_count, video_b_frame_count))
+                    video_frame_pair_masks = np.ones((video_a_frame_count, video_b_frame_count))
+
+                    # Loop on each frame pair
+                    for i in range(video_a_frame_count):
+                        # Compute cycle progression for frame i of video a
+                        frame_a = i % hb_freq_a
+                        cycle_distance_a = frame_a - contracted_a
+                        cycle_distance_a = cycle_distance_a if cycle_distance_a >= 0 else cycle_distance_a + hb_freq_a
+                        cycle_progression_a = cycle_distance_a / hb_freq_a
+
+                        for j in range(video_b_frame_count):
+                            # Compute cycle progression for frame j of video b
+                            frame_b = j % hb_freq_b
+                            cycle_distance_b = frame_b - contracted_b
+                            cycle_distance_b = cycle_distance_b if cycle_distance_b >= 0 else cycle_distance_b + hb_freq_b
+                            cycle_progression_b = cycle_distance_b / hb_freq_b
+
+                            # Compute similarity of the pair
+                            similarity = abs(cycle_progression_a - cycle_progression_b)
+                            similarity = min(similarity, 1 - similarity) * 2
+                            video_frame_pair_values[i, j] = 1 - similarity
+                            # TODO compute masks if possible
+                            # video_frame_pair_masks[i, j] = 1 if self.max_cycles_for_pairs == 0 or abs(i - j) <= hb_freq * self.max_cycles_for_pairs else 0
+
+                    self.frame_pair_values.append(video_frame_pair_values)
+                    self.frame_pair_masks.append(video_frame_pair_masks)
+        else:
+            for video_id in range(video_count):
+                # print("video", video_id)
+                self.video_frame_provider.select_video(video_id)
+                video_frame_count = self.video_frame_provider.get_current_video_frame_count()
+                video_frame_pair_values = np.zeros((video_frame_count, video_frame_count))
+                video_frame_pair_masks = np.zeros((video_frame_count, video_frame_count))
+                hb_freq = self.video_frame_provider.get_current_video_heartbeat_frequency()
+                for i in range(video_frame_count):
                     a = i % hb_freq
-                    b = j % hb_freq
-                    frame_diff = abs(a - b)
-                    frame_diff = min(frame_diff, hb_freq - frame_diff)
-                    video_frame_pair_values[i][j] = video_frame_pair_values[j][i] = 1 - frame_diff / (hb_freq / 2)
-                    video_frame_pair_masks[i][j] = video_frame_pair_masks[j][i] = 1 if self.max_cycles_for_pairs == 0 or abs(i - j) <= hb_freq * self.max_cycles_for_pairs else 0
-            self.frame_pair_values.append(video_frame_pair_values)
-            self.frame_pair_masks.append(video_frame_pair_masks)
+                    for j in range(i+1, video_frame_count):
+                        b = j % hb_freq
+                        frame_diff = abs(a - b)
+                        frame_diff = min(frame_diff, hb_freq - frame_diff)
+                        video_frame_pair_values[i][j] = video_frame_pair_values[j][i] = 1 - frame_diff / (hb_freq / 2)
+                        video_frame_pair_masks[i][j] = video_frame_pair_masks[j][i] = 1 if self.max_cycles_for_pairs == 0 or abs(i - j) <= hb_freq * self.max_cycles_for_pairs else 0
+                self.frame_pair_values.append(video_frame_pair_values)
+                self.frame_pair_masks.append(video_frame_pair_masks)
 
     def __len__(self):
         return self.epoch_size
@@ -363,8 +420,8 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
 
 class AngioSequenceTestDataset(Dataset):
 
-    def __init__(self, path):
-        self.files, self.names = get_all_valid_frames_in_paths(path, None)
+    def __init__(self, paths):
+        self.files, self.names = get_all_valid_frames_in_paths(paths, [])
         self.video_frame_provider = VideoFrameProvider(images=self.files, names=self.names)
         self.sequence_length = 3
 
@@ -397,11 +454,11 @@ def get_multisiamese_datasets(training_path, validation_path, epoch_size, batch_
     return training_set, validation_set
 
 
-def get_soft_multisiamese_datasets(training_paths, validation_paths, max_cycles_for_pairs, sequence, epoch_size, batch_size):
+def get_soft_multisiamese_datasets(training_paths, validation_paths, max_cycles_for_pairs, sequence, epoch_size, batch_size, inter_video_pairs):
     training_paths = [training_paths] if not type(training_paths) == list else training_paths
     validation_paths = [validation_paths] if not type(validation_paths) == list else validation_paths
-    training_set = AngioSequenceSoftMultiSiameseDataset(training_paths, validation_paths, sequence, max_cycles_for_pairs, epoch_size, batch_size)
-    validation_set = None if validation_paths[0] is None else AngioSequenceSoftMultiSiameseDataset(validation_paths, [], sequence, max_cycles_for_pairs, round(epoch_size / 10), batch_size)
+    training_set = AngioSequenceSoftMultiSiameseDataset(training_paths, validation_paths, sequence, max_cycles_for_pairs, epoch_size, batch_size, inter_video_pairs)
+    validation_set = None if validation_paths[0] is None else AngioSequenceSoftMultiSiameseDataset(validation_paths, [], sequence, max_cycles_for_pairs, round(epoch_size / 10), batch_size, inter_video_pairs)
     return training_set, validation_set
 
 
@@ -413,8 +470,9 @@ def get_datasets(training_path, validation_path):
     return training_set, validation_set
 
 
-def get_test_set(test_path):
-    return AngioSequenceTestDataset(test_path)
+def get_test_set(test_paths):
+    test_paths = [test_paths] if not type(test_paths) == list else test_paths
+    return AngioSequenceTestDataset(test_paths)
 
 
 def get_frame_indices_of_most_distant_similar_pair_with_randomness(similarity_matrix, masks, real_frame_indices):
@@ -465,7 +523,8 @@ if __name__ == '__main__':
     # Soft Multisiamese
     max_cycle_for_pairs = 0
     sequence = 3
-    training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_path, max_cycle_for_pairs, 1000, 64)
+    inter_video_pairs = True
+    training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_path, max_cycle_for_pairs, sequence, 1000, 64, inter_video_pairs)
     training_dataloader = DataLoader(training_set, batch_size=1, shuffle=False, num_workers=0)
     for i_batch, data in enumerate(training_dataloader):
         print(type(data))

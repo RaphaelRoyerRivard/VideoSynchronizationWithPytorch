@@ -307,6 +307,8 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
         if self.inter_video_pairs:
             for video_a_id in range(video_count):
                 print(f"Computing pair similarities ({video_a_id+1}/{video_count})")
+                frame_pair_values = []
+                frame_pair_masks = []
                 self.video_frame_provider.select_video(video_a_id)
                 video_a_frame_count = self.video_frame_provider.get_current_video_frame_count()
                 hb_freq_a = self.video_frame_provider.get_current_video_heartbeat_frequency()
@@ -344,8 +346,11 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
                             # TODO compute masks if possible
                             # video_frame_pair_masks[i, j] = 1 if self.max_cycles_for_pairs == 0 or abs(i - j) <= hb_freq * self.max_cycles_for_pairs else 0
 
-                    self.frame_pair_values.append(video_frame_pair_values)
-                    self.frame_pair_masks.append(video_frame_pair_masks)
+                    frame_pair_values.append(video_frame_pair_values)
+                    frame_pair_masks.append(video_frame_pair_masks)
+
+                self.frame_pair_values.append(frame_pair_values)
+                self.frame_pair_masks.append(frame_pair_masks)
         else:
             for video_id in range(video_count):
                 # print("video", video_id)
@@ -378,44 +383,119 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
             # Select a random video
             video_id = np.random.randint(0, self.video_frame_provider.video_count())
             self.video_frame_provider.select_video(video_id)
+            video_name = self.video_frame_provider.get_current_video_name()
             frame_count = self.video_frame_provider.get_current_video_frame_count()
             possible_frames = np.arange(self.sequence - 1, frame_count)
             possible_frames_count = len(possible_frames)
 
-            # if there are more frames in the video than the size of our batch, we can sample from it
-            if possible_frames_count > self.batch_size:
-                # Randomly select frames in our video based on the batch size
-                frame_indices = np.random.choice(possible_frames, self.batch_size, replace=False)
-                similarity_matrix = np.zeros((self.batch_size, self.batch_size), dtype=np.float32)
-                masks = np.zeros((self.batch_size, self.batch_size), dtype=np.float32)
+            if self.inter_video_pairs:
+                video_id_b = np.random.randint(0, self.video_frame_provider.video_count())
+                self.video_frame_provider.select_video(video_id_b)
+                video_name_b = self.video_frame_provider.get_current_video_name()
+                frame_count_b = self.video_frame_provider.get_current_video_frame_count()
+                possible_frames_b = np.arange(self.sequence - 1, frame_count_b)
+                possible_frames_count_b = len(possible_frames_b)
+                # print(f"Sampled videos {video_id} and {video_id_b} with {possible_frames_count} and {possible_frames_count_b} frames")
+
+                # if there are more frames in the video than the size of our batch, we can sample from it
+                if possible_frames_count > self.batch_size:
+                    # Randomly select frames in our video based on the batch size
+                    frame_indices_a = np.random.choice(possible_frames, self.batch_size, replace=False)
+                else:
+                    frame_indices_a = possible_frames
+
+                # if there are more frames in the video than the size of our batch, we can sample from it
+                if possible_frames_count_b > self.batch_size:
+                    # Randomly select frames in our video based on the batch size
+                    frame_indices_b = np.random.choice(possible_frames_b, self.batch_size, replace=False)
+                else:
+                    frame_indices_b = possible_frames_b
+
+                similarity_matrix = np.zeros((len(frame_indices_a), len(frame_indices_b)), dtype=np.float32)
+                masks = np.zeros((len(frame_indices_a), len(frame_indices_b)), dtype=np.float32)
+                # print("Creating similarity matrix of shape", similarity_matrix.shape)
+
+                frame_sequences_a = []
+                frame_sequences_b = []
+                self.video_frame_provider.select_video(video_id)
+                # Compare every frame to create the similarity matrix
+                for i, frame_a_index in enumerate(frame_indices_a):
+                    for j in range(len(frame_indices_b)):
+                        frame_b_index = frame_indices_b[j]
+                        if video_id <= video_id_b:
+                            # print(frame_a_index, frame_b_index, self.frame_pair_values[video_id][video_id_b-video_id].shape)
+                            pair_value = self.frame_pair_values[video_id][video_id_b-video_id][frame_a_index, frame_b_index]
+                            pair_mask = self.frame_pair_masks[video_id][video_id_b-video_id][frame_a_index, frame_b_index]
+                        else:
+                            # print(frame_b_index, frame_a_index, self.frame_pair_values[video_id_b][video_id-video_id_b].shape)
+                            pair_value = self.frame_pair_values[video_id_b][video_id-video_id_b][frame_b_index, frame_a_index]
+                            pair_mask = self.frame_pair_masks[video_id_b][video_id-video_id_b][frame_b_index, frame_a_index]
+                        similarity_matrix[i, j] = pair_value
+                        masks[i, j] = pair_mask
+
+                    # Create frame sequence
+                    frame_sequence = []
+                    for sequence_index in reversed(range(self.sequence)):
+                        frame_sequence.append(self.video_frame_provider.get_current_video_frame(frame_a_index - sequence_index))
+
+                    # Duplicate frame to have a gray RBG image
+                    if self.sequence == 1:
+                        frame_sequence.append(frame_sequence[0])
+                        frame_sequence.append(frame_sequence[0])
+
+                    frame_sequences_a.append(frame_sequence)
+
+                self.video_frame_provider.select_video(video_id_b)
+                for j in range(len(frame_indices_b)):
+                    frame_b_index = frame_indices_b[j]
+                    # Create frame sequence
+                    frame_sequence = []
+                    for sequence_index in reversed(range(self.sequence)):
+                        frame_sequence.append(self.video_frame_provider.get_current_video_frame(frame_b_index - sequence_index))
+
+                    # Duplicate frame to have a gray RBG image
+                    if self.sequence == 1:
+                        frame_sequence.append(frame_sequence[0])
+                        frame_sequence.append(frame_sequence[0])
+
+                    frame_sequences_b.append(frame_sequence)
+
+                appended_frame_sequences = np.append(np.array(frame_sequences_a), np.array(frame_sequences_b), axis=0)
+                yield appended_frame_sequences, (similarity_matrix, masks), {"frame_indices_a": frame_indices_a, "frame_indices_b": frame_indices_b, "video_name_a": video_name, "video_name_b": video_name_b}
+
             else:
-                frame_indices = possible_frames
-                similarity_matrix = np.zeros((possible_frames_count, possible_frames_count), dtype=np.float32)
-                masks = np.zeros((possible_frames_count, possible_frames_count), dtype=np.float32)
+                # if there are more frames in the video than the size of our batch, we can sample from it
+                if possible_frames_count > self.batch_size:
+                    # Randomly select frames in our video based on the batch size
+                    frame_indices = np.random.choice(possible_frames, self.batch_size, replace=False)
+                else:
+                    frame_indices = possible_frames
+                similarity_matrix = np.zeros((len(frame_indices), len(frame_indices)), dtype=np.float32)
+                masks = np.zeros((len(frame_indices), len(frame_indices)), dtype=np.float32)
 
-            frame_sequences = []
-            # Compare every frame to create the positive and negative matrices
-            for i, frame_a_index in enumerate(frame_indices):
-                for j in range(i+1, len(frame_indices)):
-                    frame_b_index = frame_indices[j]
-                    pair_value = self.frame_pair_values[video_id][frame_a_index, frame_b_index]
-                    pair_mask = self.frame_pair_masks[video_id][frame_a_index, frame_b_index]
-                    similarity_matrix[i, j] = similarity_matrix[j, i] = pair_value
-                    masks[i, j] = masks[j, i] = pair_mask
+                frame_sequences = []
+                # Compare every frame to create the similarity matrix
+                for i, frame_a_index in enumerate(frame_indices):
+                    for j in range(i+1, len(frame_indices)):
+                        frame_b_index = frame_indices[j]
+                        pair_value = self.frame_pair_values[video_id][frame_a_index, frame_b_index]
+                        pair_mask = self.frame_pair_masks[video_id][frame_a_index, frame_b_index]
+                        similarity_matrix[i, j] = similarity_matrix[j, i] = pair_value
+                        masks[i, j] = masks[j, i] = pair_mask
 
-                # Create frame sequence
-                frame_sequence = []
-                for sequence_index in reversed(range(self.sequence)):
-                    frame_sequence.append(self.video_frame_provider.get_current_video_frame(frame_a_index - sequence_index))
+                    # Create frame sequence
+                    frame_sequence = []
+                    for sequence_index in reversed(range(self.sequence)):
+                        frame_sequence.append(self.video_frame_provider.get_current_video_frame(frame_a_index - sequence_index))
 
-                # Duplicate frame to have a gray RBG image
-                if self.sequence == 1:
-                    frame_sequence.append(frame_sequence[0])
-                    frame_sequence.append(frame_sequence[0])
+                    # Duplicate frame to have a gray RBG image
+                    if self.sequence == 1:
+                        frame_sequence.append(frame_sequence[0])
+                        frame_sequence.append(frame_sequence[0])
 
-                frame_sequences.append(frame_sequence)
+                    frame_sequences.append(frame_sequence)
 
-            yield np.array(frame_sequences), (similarity_matrix, masks), {"frame_indices": frame_indices, "video_name": self.video_frame_provider.get_current_video_name()}
+                yield np.array(frame_sequences), (similarity_matrix, masks), {"frame_indices": frame_indices, "video_name": video_name}
 
 
 class AngioSequenceTestDataset(Dataset):

@@ -181,7 +181,7 @@ class SoftMultiSiameseCosineSimilarityLoss(nn.Module):
 
     """
     Parameters
-    embeddings: matrix of size (batch_size, embedding_size)
+    embeddings: 1 or 2 matrices of size (batch_size, embedding_size)
     similarity_matrix: matrix of pair similarity of size (batch_size, batch_size)
     masks: matrix of masks of size (batch_size, batch_size) to consider only some pairs
     
@@ -189,14 +189,28 @@ class SoftMultiSiameseCosineSimilarityLoss(nn.Module):
     loss: scalar between 0 and 1 where 0 represents perfect pair similarity while 1 is the opposite.
     """
     def forward(self, embeddings, similarity_matrix, masks):
-        batch_size, embedding_size = embeddings.shape
+        if len(embeddings) != len(similarity_matrix):
+            embedding_size = embeddings.shape[1]
+            batch_size_a = similarity_matrix.shape[1]
+            batch_size_b = similarity_matrix.shape[2]
 
-        # normalize embeddings
-        normalized_embeddings = embeddings / torch.norm(embeddings, dim=-1).view(batch_size, 1)
+            # normalize embeddings
+            normalized_embeddings_a = embeddings[:batch_size_a] / torch.norm(embeddings[:batch_size_a], dim=-1).view(batch_size_a, 1)
+            normalized_embeddings_b = embeddings[batch_size_a:] / torch.norm(embeddings[batch_size_a:], dim=-1).view(batch_size_b, 1)
 
-        # calculate cosine similarity for every combination
-        cosine_similarities = torch.bmm(normalized_embeddings.view(1, batch_size, embedding_size),
-                                        normalized_embeddings.t().view(1, embedding_size, batch_size)).cpu()
+            # calculate cosine similarity for every combination
+            cosine_similarities = torch.bmm(normalized_embeddings_a.view(1, batch_size_a, embedding_size),
+                                            normalized_embeddings_b.t().view(1, embedding_size, batch_size_b)).cpu()
+
+        else:
+            batch_size, embedding_size = embeddings.shape
+
+            # normalize embeddings
+            normalized_embeddings = embeddings / torch.norm(embeddings, dim=-1).view(batch_size, 1)
+
+            # calculate cosine similarity for every combination
+            cosine_similarities = torch.bmm(normalized_embeddings.view(1, batch_size, embedding_size),
+                                            normalized_embeddings.t().view(1, embedding_size, batch_size)).cpu()
 
         # we want the similarity to be between 0 (dissimilar) to 1 (similar)
         cosine_similarities = (cosine_similarities + 1) / 2
@@ -209,18 +223,6 @@ class SoftMultiSiameseCosineSimilarityLoss(nn.Module):
         nonzero = torch.nonzero(diff)
         count = nonzero.shape[0]
         similarity_loss = diff.sum() / count if count > 0 else 0
-
-        # if embedding_size == 2:
-        #     # TODO apply the mask on the distance loss
-        #     # margin = 0.5
-        #     # distances = pairwise_distances(embeddings).cpu()
-        #     #
-        #     # distance_loss = torch.where(similarity_matrix >= 0, distances * similarity_matrix, torch.clamp((distances - margin) * similarity_matrix, min=0.)).mean()
-        #     #
-        #     # return similarity_loss + distance_loss, similarity_loss, distance_loss
-        #
-        #     length_loss = torch.abs(1 - torch.norm(embeddings, dim=-1)).mean().cpu()
-        #     return similarity_loss + length_loss, similarity_loss, length_loss
 
         return similarity_loss, similarity_loss, 0
 

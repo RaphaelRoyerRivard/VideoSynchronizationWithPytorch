@@ -88,17 +88,22 @@ def pairwise_distances(x, y=None):
 
 
 class Node:
-    def __init__(self, point, cost, parent=None):
+    def __init__(self, point, cost, direction=None, parent=None):
         self.point = point
         self.cost = cost
+        self.direction = direction
         self.parent = parent
 
 
 def pathfinding(matrix, hb_freq):
+    MAX_CONSECUTIVE_STEPS = 3
     print("Matrix shape", matrix.shape)
 
     # Find the starting point
-    starting_point = (0, matrix[0][:hb_freq].argmin())
+    if matrix.shape[0] <= matrix.shape[1]:
+        starting_point = (0, matrix[0][:hb_freq].argmin())
+    else:
+        starting_point = (matrix.T[0][:hb_freq].argmin(), 0)
     print("Starting point", starting_point)
 
     current_node = Node(starting_point, 0)
@@ -111,15 +116,27 @@ def pathfinding(matrix, hb_freq):
         if current_node.point not in closed_nodes or current_node.cost < closed_nodes[current_node.point]:
             # Put the current node in the closed set
             closed_nodes[current_node.point] = current_node.cost
+            # Prevent too many consecutive steps in the same direction
+            consecutive_direction = current_node.direction
+            consecutive_steps = 0
+            if consecutive_direction != "DIAG":
+                previous_node = current_node.parent
+                while previous_node is not None and previous_node.direction == consecutive_direction and consecutive_steps < MAX_CONSECUTIVE_STEPS:
+                    previous_node = current_node.parent
+                    consecutive_steps += 1
+            if consecutive_steps < MAX_CONSECUTIVE_STEPS:
+                consecutive_direction = None
             # Generate the neighbors
-            neighbors = [
-                (current_node.point[0] + 1, current_node.point[1]),     # move down
-                (current_node.point[0], current_node.point[1] + 1),     # move right
-                (current_node.point[0] + 1, current_node.point[1] + 1)  # move down right
-            ]
+            neighbors = []
+            if consecutive_direction != "DOWN":
+                neighbors.append(((current_node.point[0] + 1, current_node.point[1]), "DOWN"))
+            if consecutive_direction != "RIGHT":
+                neighbors.append(((current_node.point[0], current_node.point[1] + 1), "RIGHT"))
+            if consecutive_direction != "DIAG":
+                neighbors.append(((current_node.point[0] + 1, current_node.point[1] + 1), "DIAG"))
             # Add the neighbors to the opened list
             for neighbor in neighbors:
-                opened_nodes.append(Node(neighbor, current_node.cost + matrix[neighbor], current_node))
+                opened_nodes.append(Node(neighbor[0], current_node.cost + matrix[neighbor[0]], neighbor[1], current_node))
             # Sort the opened list to find the node with the lowest cost
             opened_nodes.sort(key=lambda x: x.cost)
         # Get the lowest cost node

@@ -5,6 +5,7 @@ import re
 import torch
 from matplotlib import pyplot as plt
 from torch.utils.data import Dataset, DataLoader
+from torchvision import transforms
 from utils import optical_flow, optical_flow2
 
 
@@ -277,7 +278,7 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
     """
     Yield matrices of similarity between pairs
     """
-    def __init__(self, paths, path_to_ignores, sequence, max_cycles_for_pairs, epoch_size, batch_size, inter_video_pairs):
+    def __init__(self, paths, path_to_ignores, sequence, max_cycles_for_pairs, epoch_size, batch_size, inter_video_pairs, use_data_augmentation):
         """
         Sample most trivial training data for phase 0 (intra-video sampling of consecutive frames)
 
@@ -298,6 +299,14 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
         self.epoch_size = epoch_size
         self.batch_size = batch_size
         self.inter_video_pairs = inter_video_pairs
+        self.use_data_augmentation = use_data_augmentation
+        if use_data_augmentation:
+            self.data_augmentation = transforms.Compose([
+                transforms.ToPILImage(),
+                transforms.ColorJitter(brightness=0.25, contrast=0.25, saturation=0.25, hue=0.25),
+                transforms.RandomResizedCrop(224, scale=(0.8, 1.)),
+                transforms.RandomAffine(degrees=10, translate=(0.1, 0.1), fillcolor=0)
+            ])
         self._calc_similarity_between_all_pairs()
 
     def _calc_similarity_between_all_pairs(self):
@@ -443,6 +452,23 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
                         frame_sequence.append(frame_sequence[0])
                         frame_sequence.append(frame_sequence[0])
 
+                    # Apply data augmentation
+                    if self.use_data_augmentation:
+                        frame_sequence = np.array(frame_sequence)
+                        frame_sequence = (frame_sequence * 255).astype(np.uint8)
+                        frame_sequence = np.moveaxis(frame_sequence, 0, 2)
+                        # plt.subplot(1, 2, 1)
+                        # plt.imshow(frame_sequence)
+                        # plt.title("Before")
+                        frame_sequence = self.data_augmentation(frame_sequence)
+                        frame_sequence = np.asarray(frame_sequence)
+                        # plt.subplot(1, 2, 2)
+                        # plt.imshow(frame_sequence)
+                        # plt.title("After")
+                        # plt.show()
+                        frame_sequence = np.moveaxis(frame_sequence, 2, 0)
+                        frame_sequence = frame_sequence.astype(np.float32) / 255
+
                     frame_sequences_a.append(frame_sequence)
 
                 self.video_frame_provider.select_video(video_id_b)
@@ -457,6 +483,24 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
                     if self.sequence == 1:
                         frame_sequence.append(frame_sequence[0])
                         frame_sequence.append(frame_sequence[0])
+
+                    # Apply data augmentation
+                    if self.use_data_augmentation:
+                        frame_sequence = np.array(frame_sequence)
+                        frame_sequence = (frame_sequence * 255).astype(np.uint8)
+                        frame_sequence = np.moveaxis(frame_sequence, 0, 2)
+                        # plt.subplot(1, 2, 1)
+                        # plt.imshow(frame_sequence)
+                        # plt.title("Before")
+                        frame_sequence = self.data_augmentation(frame_sequence)
+                        frame_sequence = np.asarray(frame_sequence)
+                        # print(frame_sequence.shape)
+                        # plt.subplot(1, 2, 2)
+                        # plt.imshow(frame_sequence)
+                        # plt.title("After")
+                        # plt.show()
+                        frame_sequence = np.moveaxis(frame_sequence, 2, 0)
+                        frame_sequence = frame_sequence.astype(np.float32) / 255
 
                     frame_sequences_b.append(frame_sequence)
 
@@ -534,11 +578,11 @@ def get_multisiamese_datasets(training_path, validation_path, epoch_size, batch_
     return training_set, validation_set
 
 
-def get_soft_multisiamese_datasets(training_paths, validation_paths, max_cycles_for_pairs, sequence, epoch_size, batch_size, inter_video_pairs):
+def get_soft_multisiamese_datasets(training_paths, validation_paths, max_cycles_for_pairs, sequence, epoch_size, batch_size, inter_video_pairs, use_data_augmentation):
     training_paths = [training_paths] if not type(training_paths) == list else training_paths
     validation_paths = [validation_paths] if not type(validation_paths) == list else validation_paths
-    training_set = AngioSequenceSoftMultiSiameseDataset(training_paths, validation_paths, sequence, max_cycles_for_pairs, epoch_size, batch_size, inter_video_pairs)
-    validation_set = None if validation_paths[0] is None else AngioSequenceSoftMultiSiameseDataset(validation_paths, [], sequence, max_cycles_for_pairs, round(epoch_size / 10), batch_size, inter_video_pairs)
+    training_set = AngioSequenceSoftMultiSiameseDataset(training_paths, validation_paths, sequence, max_cycles_for_pairs, epoch_size, batch_size, inter_video_pairs, use_data_augmentation)
+    validation_set = None if validation_paths[0] is None else AngioSequenceSoftMultiSiameseDataset(validation_paths, [], sequence, max_cycles_for_pairs, round(epoch_size / 10), batch_size, inter_video_pairs, use_data_augmentation=False)
     return training_set, validation_set
 
 
@@ -583,9 +627,9 @@ def show_superimposed_frames(sequences, i, j, real_frame_indices, video_name):
 
 
 if __name__ == '__main__':
-    training_path = r'C:\Users\root\Data\Angiographie'
+    # training_path = r'C:\Users\root\Data\Angiographie'
     # validation_path = r'C:\Users\root\Data\Angiographie\KR-11'
-    # training_path = r'C:\Users\root\Data\Angiographie\AA-4'
+    training_path = r'C:\Users\root\Data\Angiographie\AA-4'
     validation_path = None
 
     # # Multisiamese
@@ -601,10 +645,7 @@ if __name__ == '__main__':
     #     print("negative_matrix", negative_matrix)
 
     # Soft Multisiamese
-    max_cycle_for_pairs = 0
-    sequence = 3
-    inter_video_pairs = True
-    training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_path, max_cycle_for_pairs, sequence, 1000, 64, inter_video_pairs)
+    training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_path, max_cycles_for_pairs=0, sequence=3, epoch_size=1000, batch_size=64, inter_video_pairs=True, use_data_augmentation=True)
     training_dataloader = DataLoader(training_set, batch_size=1, shuffle=False, num_workers=0)
     for i_batch, data in enumerate(training_dataloader):
         print(type(data))

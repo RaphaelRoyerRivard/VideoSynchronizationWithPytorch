@@ -287,6 +287,11 @@ def add_sigmoid_activation(model):
     return nn.Sequential(model, nn.modules.Sigmoid())
 
 
+def stop_running_var(model):
+    if isinstance(model, nn.BatchNorm2d):
+        model.track_running_stats = False
+
+
 if __name__ == "__main__":
     # torch.cuda.set_device(0)
     # embedding_net = models.resnet50(pretrained=True)

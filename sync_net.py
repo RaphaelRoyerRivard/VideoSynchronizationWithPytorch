@@ -8,7 +8,7 @@ from torchsummary import summary
 import numpy as np
 from itertools import combinations
 from data_loader import get_datasets
-from trainer import fit
+# from trainer import fit
 from torch.utils.data import DataLoader
 from utils import pairwise_distances
 cuda = torch.cuda.is_available()
@@ -277,10 +277,22 @@ def reset_first_layer(model):
     nn.init.xavier_uniform_(model.conv1.weight)
 
 
-def replace_last_layer(model, out_features):
+def replace_last_layer(model, out_features, dropout=0):
     # reset the weights of the fully connected layer at the end because we want to learn an embedding that is useful to our sequence and not to classify images
-    model.fc = nn.Linear(2048, out_features)
-    nn.init.xavier_uniform_(model.fc.weight)
+    if dropout == 0:
+        model.fc = nn.Linear(2048, out_features)
+    else:
+        model.fc = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.Linear(2048, out_features)
+        )
+    nn.init.xavier_uniform_(get_fc_weights(model))
+
+
+def get_fc_weights(model):
+    if type(model.fc) == nn.modules.container.Sequential:
+        return list(model.fc.modules())[-1].weight
+    return model.fc.weight
 
 
 def add_sigmoid_activation(model):

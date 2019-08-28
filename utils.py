@@ -95,50 +95,93 @@ class Node:
         self.parent = parent
 
 
-def pathfinding(matrix, hb_freq):
+def pathfinding(matrix):
     MAX_CONSECUTIVE_STEPS = 3
     print("Matrix shape", matrix.shape)
 
-    # Find the starting point
-    if matrix.shape[0] <= matrix.shape[1]:
-        starting_point = (0, matrix[0][:hb_freq].argmin())
-    else:
-        starting_point = (matrix.T[0][:hb_freq].argmin(), 0)
-    print("Starting point", starting_point)
+    starting_points = []
+    # Find the starting points
+    # if matrix.shape[0] <= matrix.shape[1]:
+    minimums = find_local_minimums(matrix[0].copy())
+    for minimum in minimums:
+        starting_points.append((0, minimum))
+    # else:
+    minimums = find_local_minimums(matrix.T[0].copy())
+    for minimum in minimums:
+        starting_points.append((minimum, 0))
+    print("Starting points", starting_points)
 
-    current_node = Node(starting_point, 0)
-    closed_nodes = {}
-    opened_nodes = []
+    end_nodes = []
+    for starting_point in starting_points:
+        current_node = Node(starting_point, 0)
+        closed_nodes = {}
+        opened_nodes = []
 
-    # Iterate through the matrix while our current node has not reached an edge
-    while current_node.point[0] < matrix.shape[0] - 1 and current_node.point[1] < matrix.shape[1] - 1:
-        # If the current point has not already been explored or if it has a lower cost
-        if current_node.point not in closed_nodes or current_node.cost < closed_nodes[current_node.point]:
-            # Put the current node in the closed set
-            closed_nodes[current_node.point] = current_node.cost
-            # Prevent too many consecutive steps in the same direction
-            consecutive_direction = current_node.direction
-            consecutive_steps = 0
-            if consecutive_direction != "DIAG":
-                previous_node = current_node.parent
-                while previous_node is not None and previous_node.direction == consecutive_direction and consecutive_steps < MAX_CONSECUTIVE_STEPS:
+        # Iterate through the matrix while our current node has not reached an edge
+        print(current_node.point)
+        while current_node.point[0] < matrix.shape[0] - 1 and current_node.point[1] < matrix.shape[1] - 1:
+            # If the current point has not already been explored or if it has a lower cost
+            if current_node.point not in closed_nodes or current_node.cost < closed_nodes[current_node.point]:
+                # Put the current node in the closed set
+                closed_nodes[current_node.point] = current_node.cost
+                # Prevent too many consecutive steps in the same direction
+                consecutive_direction = current_node.direction
+                consecutive_steps = 0
+                if consecutive_direction != "DIAG":
                     previous_node = current_node.parent
-                    consecutive_steps += 1
-            if consecutive_steps < MAX_CONSECUTIVE_STEPS:
-                consecutive_direction = None
-            # Generate the neighbors
-            neighbors = []
-            if consecutive_direction != "DOWN":
-                neighbors.append(((current_node.point[0] + 1, current_node.point[1]), "DOWN"))
-            if consecutive_direction != "RIGHT":
-                neighbors.append(((current_node.point[0], current_node.point[1] + 1), "RIGHT"))
-            if consecutive_direction != "DIAG":
-                neighbors.append(((current_node.point[0] + 1, current_node.point[1] + 1), "DIAG"))
-            # Add the neighbors to the opened list
-            for neighbor in neighbors:
-                opened_nodes.append(Node(neighbor[0], current_node.cost + matrix[neighbor[0]], neighbor[1], current_node))
-            # Sort the opened list to find the node with the lowest cost
-            opened_nodes.sort(key=lambda x: x.cost)
-        # Get the lowest cost node
-        current_node = opened_nodes.pop(0)
-    return current_node
+                    while previous_node is not None and previous_node.direction == consecutive_direction and consecutive_steps < MAX_CONSECUTIVE_STEPS:
+                        previous_node = current_node.parent
+                        consecutive_steps += 1
+                if consecutive_steps < MAX_CONSECUTIVE_STEPS:
+                    consecutive_direction = None
+                # Generate the neighbors
+                neighbors = []
+                if consecutive_direction != "DOWN":
+                    neighbors.append(((current_node.point[0] + 1, current_node.point[1]), "DOWN"))
+                if consecutive_direction != "RIGHT":
+                    neighbors.append(((current_node.point[0], current_node.point[1] + 1), "RIGHT"))
+                if consecutive_direction != "DIAG":
+                    neighbors.append(((current_node.point[0] + 1, current_node.point[1] + 1), "DIAG"))
+                # Add the neighbors to the opened list
+                for neighbor in neighbors:
+                    opened_nodes.append(Node(neighbor[0], current_node.cost + matrix[neighbor[0]], neighbor[1], current_node))
+                # Sort the opened list to find the node with the lowest cost
+                opened_nodes.sort(key=lambda x: x.cost)
+            # Get the lowest cost node
+            current_node = opened_nodes.pop(0)
+        end_nodes.append(current_node)
+    return end_nodes
+
+
+def find_local_minimums(array):
+    from matplotlib import pyplot as plt
+    array = array - array.mean()
+    moving_average = get_moving_average(array, 15)
+    mins = []
+    current_min = np.inf
+    current_min_index = -1
+    for index, (value, mov_avg) in enumerate(zip(array, moving_average)):
+        if mov_avg > 0 and current_min < 0:
+            mins.append((current_min_index, current_min))
+            current_min = np.inf
+        elif mov_avg < 0 and value < current_min:
+            current_min = value
+            current_min_index = index
+    plt.plot(moving_average, color='gray')
+    plt.plot(array)
+    plt.axhline(0, color='black')
+    for min in mins:
+        plt.axvline(min[0], color='purple')
+    plt.show()
+    return [min[0] for min in mins]
+
+
+def gaussian_kernel_1d(n, sigma=1):
+    r = range(-int(n/2), int(n/2)+1)
+    return [1 / (sigma * np.sqrt(2*np.pi)) * np.exp(-float(x)**2/(2*sigma**2)) for x in r]
+
+
+def get_moving_average(values, N):
+    gaussian_kernel = np.array(gaussian_kernel_1d(N, sigma=4))
+    moving_average = np.convolve(values, gaussian_kernel/gaussian_kernel.sum(), mode='same')
+    return moving_average

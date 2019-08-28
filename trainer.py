@@ -3,6 +3,7 @@ import numpy as np
 import time
 from datetime import timedelta
 from matplotlib import pyplot as plt
+from sync_net import get_fc_weights
 # import wandb
 
 
@@ -24,7 +25,7 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
         scheduler.step()
 
         if measure_weights:
-            fc_weights = model.module.embedding_net.fc.weight.cpu().data.numpy()
+            fc_weights = get_fc_weights(model.module.embedding_net).cpu().data.numpy()
 
         # Train stage
         train_loss, metrics = train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, metrics, measure_weights)
@@ -35,7 +36,7 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
             message += '\t{}: {}'.format(metric.name(), metric.value())
 
         if measure_weights:
-            new_fc_weights = model.module.embedding_net.fc.weight.cpu().data.numpy()
+            new_fc_weights = get_fc_weights(model.module.embedding_net).cpu().data.numpy()
             fc_diff = np.abs(new_fc_weights - fc_weights).sum()
             fc_average = np.abs(new_fc_weights).mean()
             fc_total = np.abs(new_fc_weights).sum()
@@ -106,7 +107,7 @@ def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, met
         data, multisiamese_mode, matrix_a, matrix_b = reformat_data(data, cuda)
 
         if measure_weights:
-            fc_weights = model.module.embedding_net.fc.weight.cpu().data.numpy()
+            fc_weights = get_fc_weights(model.module.embedding_net).cpu().data.numpy()
 
         optimizer.zero_grad()
         outputs = model(*data)
@@ -144,7 +145,7 @@ def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, met
                 message += '\t{}: {}'.format(metric.name(), metric.value())
 
             if measure_weights:
-                new_fc_weights = model.module.embedding_net.fc.weight.cpu().data.numpy()
+                new_fc_weights = get_fc_weights(model.module.embedding_net).cpu().data.numpy()
                 fc_diff = np.abs(new_fc_weights - fc_weights).sum()
                 fc_average = np.abs(new_fc_weights).mean()
                 fc_total = np.abs(new_fc_weights).sum()

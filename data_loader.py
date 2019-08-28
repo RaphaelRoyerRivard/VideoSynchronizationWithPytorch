@@ -386,9 +386,9 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
         return next(self.__iter__())
 
     def __iter__(self):
-        count = 0
-        while count < self.epoch_size:
-            count += 1
+        epoch_count = 0
+        while epoch_count < self.epoch_size:
+            epoch_count += 1
             # Select a random video
             video_id = np.random.randint(0, self.video_frame_provider.video_count())
             self.video_frame_provider.select_video(video_id)
@@ -454,20 +454,18 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
 
                     # Apply data augmentation
                     if self.use_data_augmentation:
-                        frame_sequence = np.array(frame_sequence)
-                        frame_sequence = (frame_sequence * 255).astype(np.uint8)
+                        frame_sequence = np.array([x * 255 for x in frame_sequence], dtype=np.uint8)
                         frame_sequence = np.moveaxis(frame_sequence, 0, 2)
                         # plt.subplot(1, 2, 1)
                         # plt.imshow(frame_sequence)
                         # plt.title("Before")
                         frame_sequence = self.data_augmentation(frame_sequence)
-                        frame_sequence = np.asarray(frame_sequence)
+                        frame_sequence = np.asarray(frame_sequence, dtype=np.float32) / 255
                         # plt.subplot(1, 2, 2)
                         # plt.imshow(frame_sequence)
                         # plt.title("After")
                         # plt.show()
                         frame_sequence = np.moveaxis(frame_sequence, 2, 0)
-                        frame_sequence = frame_sequence.astype(np.float32) / 255
 
                     frame_sequences_a.append(frame_sequence)
 

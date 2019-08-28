@@ -299,9 +299,14 @@ def add_sigmoid_activation(model):
     return nn.Sequential(model, nn.modules.Sigmoid())
 
 
-def stop_running_var(model):
-    if isinstance(model, nn.BatchNorm2d):
-        model.track_running_stats = False
+def stop_running_var(layer):
+    if isinstance(layer, nn.BatchNorm2d):
+        layer.track_running_stats = False
+
+
+def freeze_model(model):
+    for param in model.parameters():
+        param.requires_grad = False
 
 
 if __name__ == "__main__":

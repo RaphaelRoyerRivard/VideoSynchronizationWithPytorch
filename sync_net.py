@@ -280,19 +280,24 @@ def reset_first_layer(model):
 def replace_last_layer(model, out_features, dropout=0):
     # reset the weights of the fully connected layer at the end because we want to learn an embedding that is useful to our sequence and not to classify images
     if dropout == 0:
-        model.fc = nn.Linear(2048, out_features)
+        fc = nn.Linear(get_fc_weights(model).shape[-1], out_features)
     else:
-        model.fc = nn.Sequential(
+        fc = nn.Sequential(
             nn.Dropout(dropout),
-            nn.Linear(2048, out_features)
+            nn.Linear(get_fc_weights(model).shape[-1], out_features)
         )
+    if hasattr(model, 'classifier'):
+        model.classifier = fc
+    else:
+        model.fc = fc
     nn.init.xavier_uniform_(get_fc_weights(model))
 
 
 def get_fc_weights(model):
-    if type(model.fc) == nn.modules.container.Sequential:
-        return list(model.fc.modules())[-1].weight
-    return model.fc.weight
+    fc = model.classifier if hasattr(model, 'classifier') else model.fc
+    if type(fc) == nn.modules.container.Sequential:
+        return list(fc.modules())[-1].weight
+    return fc.weight
 
 
 def add_sigmoid_activation(model):

@@ -101,11 +101,9 @@ def pathfinding(matrix):
 
     starting_points = []
     # Find the starting points
-    # if matrix.shape[0] <= matrix.shape[1]:
     minimums = find_local_minimums(matrix[0].copy())
     for minimum in minimums:
         starting_points.append((0, minimum))
-    # else:
     minimums = find_local_minimums(matrix.T[0].copy())
     for minimum in minimums:
         starting_points.append((minimum, 0))

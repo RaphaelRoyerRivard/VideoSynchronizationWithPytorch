@@ -75,8 +75,8 @@ def get_all_valid_frames_in_paths(base_paths, paths_to_ignore):
             info = line.split(';')
             first_frame = int(info[0])
             last_frame = int(info[1])
-            freq = int(info[2])
-            contracted = int(info[3]) - first_frame
+            freq = float(info[2])
+            contracted = float(info[3]) - first_frame
             assert 0 <= contracted <= last_frame, f"Contracted frame of id {contracted} for {patient} - {angle} should be a valid frame between {first_frame} and {last_frame}"
             for filename in files:
                 if not bool(re.search('.*Frame[0-9]+\.jpg', filename)):

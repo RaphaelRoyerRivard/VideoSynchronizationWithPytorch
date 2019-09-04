@@ -95,19 +95,25 @@ class Node:
         self.parent = parent
 
 
-def pathfinding(matrix):
+def pathfinding(matrix, symmetrical, starting_points=None, reverse=False):
     MAX_CONSECUTIVE_STEPS = 3
-    print("Matrix shape", matrix.shape)
+    # print("Matrix shape", matrix.shape)
 
-    starting_points = []
-    # Find the starting points
-    minimums = find_local_minimums(matrix[0].copy())
-    for minimum in minimums:
-        starting_points.append((0, minimum))
-    minimums = find_local_minimums(matrix.T[0].copy())
-    for minimum in minimums:
-        starting_points.append((minimum, 0))
-    print("Starting points", starting_points)
+    if starting_points is None:
+        starting_points = []
+        # Find the starting points
+        # minimums = find_local_minimums(matrix[0].copy())
+        # for minimum in minimums:
+        #     starting_points.append((0, minimum))
+        # minimums = find_local_minimums(matrix.T[0].copy())
+        # for minimum in minimums:
+        #     starting_points.append((minimum, 0))
+        start = 5 if symmetrical else 0
+        for i in range(start, len(matrix[0]) - 5, 5):
+            starting_points.append((0, i))
+        for i in range(start, len(matrix.T[0]) - 5, 5):
+            starting_points.append((i, 0))
+        # print("Starting points", starting_points)
 
     end_nodes = []
     for starting_point in starting_points:
@@ -116,8 +122,8 @@ def pathfinding(matrix):
         opened_nodes = []
 
         # Iterate through the matrix while our current node has not reached an edge
-        print(current_node.point)
-        while current_node.point[0] < matrix.shape[0] - 1 and current_node.point[1] < matrix.shape[1] - 1:
+        # print(current_node.point)
+        while (not reverse and current_node.point[0] < matrix.shape[0] - 1 and current_node.point[1] < matrix.shape[1] - 1) or (reverse and current_node.point[0] > 0 and current_node.point[1] > 0):
             # If the current point has not already been explored or if it has a lower cost
             if current_node.point not in closed_nodes or current_node.cost < closed_nodes[current_node.point]:
                 # Put the current node in the closed set
@@ -135,26 +141,41 @@ def pathfinding(matrix):
                 # Generate the neighbors
                 neighbors = []
                 if consecutive_direction != "DOWN":
-                    neighbors.append(((current_node.point[0] + 1, current_node.point[1]), "DOWN"))
+                    neighbor_point = (current_node.point[0] + 1, current_node.point[1]) if not reverse else (current_node.point[0] - 1, current_node.point[1])
+                    neighbors.append((neighbor_point, "DOWN"))
                 if consecutive_direction != "RIGHT":
-                    neighbors.append(((current_node.point[0], current_node.point[1] + 1), "RIGHT"))
+                    neighbor_point = (current_node.point[0], current_node.point[1] + 1) if not reverse else (current_node.point[0], current_node.point[1] - 1)
+                    neighbors.append((neighbor_point, "RIGHT"))
                 if consecutive_direction != "DIAG":
-                    neighbors.append(((current_node.point[0] + 1, current_node.point[1] + 1), "DIAG"))
+                    neighbor_point = (current_node.point[0] + 1, current_node.point[1] + 1) if not reverse else (current_node.point[0] - 1, current_node.point[1] - 1)
+                    neighbors.append((neighbor_point, "DIAG"))
                 # Add the neighbors to the opened list
                 for neighbor in neighbors:
-                    opened_nodes.append(Node(neighbor[0], current_node.cost + matrix[neighbor[0]], neighbor[1], current_node))
+                    opened_nodes.append(Node(neighbor[0], current_node.cost + matrix[neighbor[0]] ** 2, neighbor[1], current_node))
                 # Sort the opened list to find the node with the lowest cost
                 opened_nodes.sort(key=lambda x: x.cost)
             # Get the lowest cost node
             current_node = opened_nodes.pop(0)
         end_nodes.append(current_node)
+
+    starting_points = list(dict.fromkeys([x.point for x in end_nodes]))  # remove duplicates
+
+    # Pathfinding was done forward, now we want to do it backward to make sure we don't have multiple path using the same points due to errors in the starting points selection
+    if not reverse:
+        return pathfinding(matrix, symmetrical, starting_points, reverse=True)
+
+    # We still have paths that merged together, so we do another pass to make sure all our paths are unique
+    if len(end_nodes) > len(starting_points):
+        return pathfinding(matrix, symmetrical, starting_points, reverse=False)
+
     return end_nodes
 
 
 def find_local_minimums(array):
     from matplotlib import pyplot as plt
-    array = array - array.mean()
-    moving_average = get_moving_average(array, 15)
+    lin_reg = linear_regression(array)
+    array = array - lin_reg
+    moving_average = get_moving_average(array, 7)
     mins = []
     current_min = np.inf
     current_min_index = -1
@@ -167,11 +188,21 @@ def find_local_minimums(array):
             current_min_index = index
     plt.plot(moving_average, color='gray')
     plt.plot(array)
+    # plt.plot(Y_pred, color='red')
     plt.axhline(0, color='black')
     for min in mins:
         plt.axvline(min[0], color='purple')
     plt.show()
     return [min[0] for min in mins]
+
+
+def linear_regression(array):
+    from sklearn.linear_model import LinearRegression
+    linear_regressor = LinearRegression()
+    x = np.array(list(range(len(array)))).reshape((-1, 1))
+    y = array
+    linear_regressor.fit(x, y)
+    return linear_regressor.predict(x)
 
 
 def gaussian_kernel_1d(n, sigma=1):

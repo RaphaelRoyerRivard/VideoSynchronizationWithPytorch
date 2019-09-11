@@ -450,8 +450,8 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
                 for i, frame_a_index in enumerate(frame_indices):
                     for j in range(i+1, len(frame_indices)):
                         frame_b_index = frame_indices[j]
-                        pair_value = self.frame_pair_values[video_id][frame_a_index, frame_b_index]
-                        pair_mask = self.frame_pair_masks[video_id][frame_a_index, frame_b_index]
+                        pair_value = self.frame_pair_values[video_id][0][frame_a_index, frame_b_index]
+                        pair_mask = self.frame_pair_masks[video_id][0][frame_a_index, frame_b_index]
                         similarity_matrix[i, j] = similarity_matrix[j, i] = pair_value
                         masks[i, j] = masks[j, i] = pair_mask
 
@@ -506,74 +506,74 @@ def calc_similarity_between_all_pairs(video_frame_provider, inter_video_pairs, m
     all_frame_pair_values = []
     all_frame_pair_masks = []
     video_count = video_frame_provider.video_count()
-    if inter_video_pairs:
-        for video_a_id in range(video_count):
-            print(f"Computing pair similarities ({video_a_id+1}/{video_count})")
-            frame_pair_values = []
-            frame_pair_masks = []
-            video_frame_provider.select_video(video_a_id)
-            video_a_frame_count = video_frame_provider.get_current_video_frame_count()
-            hb_freq_a = video_frame_provider.get_current_video_heartbeat_frequency()
-            contracted_frame_a = video_frame_provider.get_current_video_contracted_frame()
-            contracted_a = contracted_frame_a % hb_freq_a
-            # Loop through all videos (even the same one)
-            for video_b_id in range(video_a_id, video_count):
-                video_frame_provider.select_video(video_b_id)
-                video_b_frame_count = video_frame_provider.get_current_video_frame_count()
-                hb_freq_b = video_frame_provider.get_current_video_heartbeat_frequency()
-                contracted_frame_b = video_frame_provider.get_current_video_contracted_frame()
-                contracted_b = contracted_frame_b % hb_freq_b
-                video_frame_pair_values = np.zeros((video_a_frame_count, video_b_frame_count))
-                video_frame_pair_masks = np.ones((video_a_frame_count, video_b_frame_count))
+    # if inter_video_pairs:
+    for video_a_id in range(video_count):
+        print(f"Computing pair similarities ({video_a_id+1}/{video_count})")
+        frame_pair_values = []
+        frame_pair_masks = []
+        video_frame_provider.select_video(video_a_id)
+        video_a_frame_count = video_frame_provider.get_current_video_frame_count()
+        hb_freq_a = video_frame_provider.get_current_video_heartbeat_frequency()
+        contracted_frame_a = video_frame_provider.get_current_video_contracted_frame()
+        contracted_a = contracted_frame_a % hb_freq_a
+        # Loop through all videos (even the same one)
+        for video_b_id in range(video_a_id, video_count):
+            video_frame_provider.select_video(video_b_id)
+            video_b_frame_count = video_frame_provider.get_current_video_frame_count()
+            hb_freq_b = video_frame_provider.get_current_video_heartbeat_frequency()
+            contracted_frame_b = video_frame_provider.get_current_video_contracted_frame()
+            contracted_b = contracted_frame_b % hb_freq_b
+            video_frame_pair_values = np.zeros((video_a_frame_count, video_b_frame_count))
+            video_frame_pair_masks = np.ones((video_a_frame_count, video_b_frame_count))
 
-                # Loop on each frame pair
-                for i in range(video_a_frame_count):
-                    # Compute cycle progression for frame i of video a
-                    frame_a = i % hb_freq_a
-                    cycle_distance_a = frame_a - contracted_a
-                    cycle_distance_a = cycle_distance_a if cycle_distance_a >= 0 else cycle_distance_a + hb_freq_a
-                    cycle_progression_a = cycle_distance_a / hb_freq_a
+            # Loop on each frame pair
+            for i in range(video_a_frame_count):
+                # Compute cycle progression for frame i of video a
+                frame_a = i % hb_freq_a
+                cycle_distance_a = frame_a - contracted_a
+                cycle_distance_a = cycle_distance_a if cycle_distance_a >= 0 else cycle_distance_a + hb_freq_a
+                cycle_progression_a = cycle_distance_a / hb_freq_a
 
-                    for j in range(video_b_frame_count):
-                        # Compute cycle progression for frame j of video b
-                        frame_b = j % hb_freq_b
-                        cycle_distance_b = frame_b - contracted_b
-                        cycle_distance_b = cycle_distance_b if cycle_distance_b >= 0 else cycle_distance_b + hb_freq_b
-                        cycle_progression_b = cycle_distance_b / hb_freq_b
+                for j in range(video_b_frame_count):
+                    # Compute cycle progression for frame j of video b
+                    frame_b = j % hb_freq_b
+                    cycle_distance_b = frame_b - contracted_b
+                    cycle_distance_b = cycle_distance_b if cycle_distance_b >= 0 else cycle_distance_b + hb_freq_b
+                    cycle_progression_b = cycle_distance_b / hb_freq_b
 
-                        # Compute similarity of the pair
-                        similarity = abs(cycle_progression_a - cycle_progression_b)
-                        similarity = min(similarity, 1 - similarity) * 2
-                        video_frame_pair_values[i, j] = 1 - similarity
-                        # TODO compute masks if possible
-                        # video_frame_pair_masks[i, j] = 1 if self.max_cycles_for_pairs == 0 or abs(i - j) <= hb_freq * self.max_cycles_for_pairs else 0
+                    # Compute similarity of the pair
+                    similarity = abs(cycle_progression_a - cycle_progression_b)
+                    similarity = min(similarity, 1 - similarity) * 2
+                    video_frame_pair_values[i, j] = 1 - similarity
+                    # TODO compute masks if possible
+                    # video_frame_pair_masks[i, j] = 1 if self.max_cycles_for_pairs == 0 or abs(i - j) <= hb_freq * self.max_cycles_for_pairs else 0
 
-                # plt.imshow(video_frame_pair_values)
-                # plt.title(f"Similarity matrix for videos {video_a_id} and {video_b_id}")
-                # plt.show()
-                frame_pair_values.append(video_frame_pair_values)
-                frame_pair_masks.append(video_frame_pair_masks)
+            # plt.imshow(video_frame_pair_values)
+            # plt.title(f"Similarity matrix for videos {video_a_id} and {video_b_id}")
+            # plt.show()
+            frame_pair_values.append(video_frame_pair_values)
+            frame_pair_masks.append(video_frame_pair_masks)
 
-            all_frame_pair_values.append(frame_pair_values)
-            all_frame_pair_masks.append(frame_pair_masks)
-    else:
-        for video_id in range(video_count):
-            # print("video", video_id)
-            video_frame_provider.select_video(video_id)
-            video_frame_count = video_frame_provider.get_current_video_frame_count()
-            video_frame_pair_values = np.zeros((video_frame_count, video_frame_count))
-            video_frame_pair_masks = np.zeros((video_frame_count, video_frame_count))
-            hb_freq = video_frame_provider.get_current_video_heartbeat_frequency()
-            for i in range(video_frame_count):
-                a = i % hb_freq
-                for j in range(i+1, video_frame_count):
-                    b = j % hb_freq
-                    frame_diff = abs(a - b)
-                    frame_diff = min(frame_diff, hb_freq - frame_diff)
-                    video_frame_pair_values[i][j] = video_frame_pair_values[j][i] = 1 - frame_diff / (hb_freq / 2)
-                    video_frame_pair_masks[i][j] = video_frame_pair_masks[j][i] = 1 if max_cycles_for_pairs == 0 or abs(i - j) <= hb_freq * max_cycles_for_pairs else 0
-            all_frame_pair_values.append(video_frame_pair_values)
-            all_frame_pair_masks.append(video_frame_pair_masks)
+        all_frame_pair_values.append(frame_pair_values)
+        all_frame_pair_masks.append(frame_pair_masks)
+    # else:
+    #     for video_id in range(video_count):
+    #         # print("video", video_id)
+    #         video_frame_provider.select_video(video_id)
+    #         video_frame_count = video_frame_provider.get_current_video_frame_count()
+    #         video_frame_pair_values = np.zeros((video_frame_count, video_frame_count))
+    #         video_frame_pair_masks = np.zeros((video_frame_count, video_frame_count))
+    #         hb_freq = video_frame_provider.get_current_video_heartbeat_frequency()
+    #         for i in range(video_frame_count):
+    #             a = i % hb_freq
+    #             for j in range(i+1, video_frame_count):
+    #                 b = j % hb_freq
+    #                 frame_diff = abs(a - b)
+    #                 frame_diff = min(frame_diff, hb_freq - frame_diff)
+    #                 video_frame_pair_values[i][j] = video_frame_pair_values[j][i] = 1 - frame_diff / (hb_freq / 2)
+    #                 video_frame_pair_masks[i][j] = video_frame_pair_masks[j][i] = 1 if max_cycles_for_pairs == 0 or abs(i - j) <= hb_freq * max_cycles_for_pairs else 0
+    #         all_frame_pair_values.append(video_frame_pair_values)
+    #         all_frame_pair_masks.append(video_frame_pair_masks)
 
     return all_frame_pair_values, all_frame_pair_masks
 

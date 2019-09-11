@@ -189,7 +189,7 @@ class SoftMultiSiameseCosineSimilarityLoss(nn.Module):
     loss: scalar between 0 and 1 where 0 represents perfect pair similarity while 1 is the opposite.
     """
     def forward(self, embeddings, similarity_matrix, masks):
-        if len(embeddings) != len(similarity_matrix):
+        if len(embeddings) != len(similarity_matrix[0]):
             embedding_size = embeddings.shape[1]
             batch_size_a = similarity_matrix.shape[1]
             batch_size_b = similarity_matrix.shape[2]

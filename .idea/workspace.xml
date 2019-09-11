@@ -2,9 +2,9 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="970c7e55-fbd1-4ae5-9d99-6a4bda0df285" name="Default" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data_loader.py" beforeDir="false" afterPath="$PROJECT_DIR$/data_loader.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/main.ipynb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sync_net.py" beforeDir="false" afterPath="$PROJECT_DIR$/sync_net.py" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="TRACKING_ENABLED" value="true" />
@@ -18,7 +18,7 @@
       <file leaf-file-name="trainer.py" pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/trainer.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="-459">
+            <state>
               <folding>
                 <element signature="e#0#12#0" expanded="true" />
               </folding>
@@ -26,13 +26,25 @@
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="data_loader.py" pinned="false" current-in-tab="true">
+      <file leaf-file-name="data_loader.py" pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/data_loader.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="426">
-              <caret line="61" column="24" selection-start-line="61" selection-start-column="24" selection-end-line="61" selection-end-column="24" />
+            <state relative-caret-position="399">
+              <caret line="451" column="56" selection-start-line="451" selection-start-column="56" selection-end-line="451" selection-end-column="56" />
               <folding>
                 <element signature="e#0#10#0" expanded="true" />
+              </folding>
+            </state>
+          </provider>
+        </entry>
+      </file>
+      <file leaf-file-name="sync_net.py" pinned="false" current-in-tab="true">
+        <entry file="file://$PROJECT_DIR$/sync_net.py">
+          <provider selected="true" editor-type-id="text-editor">
+            <state relative-caret-position="262">
+              <caret line="194" column="53" lean-forward="true" selection-start-line="194" selection-start-column="53" selection-end-line="194" selection-end-column="53" />
+              <folding>
+                <element signature="e#0#12#0" expanded="true" />
               </folding>
             </state>
           </provider>
@@ -60,6 +72,7 @@
     <option name="CHANGED_PATHS">
       <list>
         <option value="$PROJECT_DIR$/data_loader.py" />
+        <option value="$PROJECT_DIR$/sync_net.py" />
       </list>
     </option>
   </component>
@@ -222,7 +235,7 @@
   <component name="editorHistoryManager">
     <entry file="file://$PROJECT_DIR$/trainer.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="-459">
+        <state>
           <folding>
             <element signature="e#0#12#0" expanded="true" />
           </folding>
@@ -231,10 +244,20 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/data_loader.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="426">
-          <caret line="61" column="24" selection-start-line="61" selection-start-column="24" selection-end-line="61" selection-end-column="24" />
+        <state relative-caret-position="399">
+          <caret line="451" column="56" selection-start-line="451" selection-start-column="56" selection-end-line="451" selection-end-column="56" />
           <folding>
             <element signature="e#0#10#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/sync_net.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="262">
+          <caret line="194" column="53" lean-forward="true" selection-start-line="194" selection-start-column="53" selection-end-line="194" selection-end-column="53" />
+          <folding>
+            <element signature="e#0#12#0" expanded="true" />
           </folding>
         </state>
       </provider>

@@ -91,6 +91,8 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
         plt.legend()
         plt.savefig(save_progress_path + r"\loss_progress.png")
 
+    print("Best validation loss: {:.4f}".format(np.min(np.array(val_losses))))
+
 
 def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, metrics, measure_weights):
     for metric in metrics:

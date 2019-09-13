@@ -291,7 +291,6 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
             batch_size (int): Size of the sampled matrices
             inter_video_pairs (bool): True to pair the frames of different videos together, False to limit to only intra-video pairs
         """
-        assert not inter_video_pairs or max_cycles_for_pairs == 0, "Cannot set a max cycles for pair when sampling pairs from different videos"
         self.files, self.names = get_all_valid_frames_in_paths(paths, path_to_ignores)
         self.video_frame_provider = VideoFrameProvider(images=self.files, names=self.names)
         self.sequence = sequence
@@ -307,7 +306,7 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
                 transforms.RandomResizedCrop(224, scale=(0.8, 1.)),
                 transforms.RandomAffine(degrees=10, translate=(0.1, 0.1), fillcolor=0)
             ])
-        self.frame_pair_values, self.frame_pair_masks = calc_similarity_between_all_pairs(self.video_frame_provider, True, self.max_cycles_for_pairs)
+        self.frame_pair_values, self.frame_pair_masks = calc_similarity_between_all_pairs(self.video_frame_provider, self.max_cycles_for_pairs)
 
     def __len__(self):
         return self.epoch_size
@@ -476,7 +475,7 @@ class AngioSequenceTestDataset(Dataset):
         self.files, self.names = get_all_valid_frames_in_paths(paths, [])
         self.video_frame_provider = VideoFrameProvider(images=self.files, names=self.names)
         self.sequence_length = 3
-        self.frame_pair_values, _ = calc_similarity_between_all_pairs(self.video_frame_provider, True)
+        self.frame_pair_values, _ = calc_similarity_between_all_pairs(self.video_frame_provider)
 
     def __len__(self):
         return self.video_frame_provider.video_count()
@@ -502,11 +501,10 @@ class AngioSequenceTestDataset(Dataset):
         return self.frame_pair_values[index_a][index_b-index_a]
 
 
-def calc_similarity_between_all_pairs(video_frame_provider, inter_video_pairs, max_cycles_for_pairs=0.):
+def calc_similarity_between_all_pairs(video_frame_provider, max_cycles_for_pairs=0.):
     all_frame_pair_values = []
     all_frame_pair_masks = []
     video_count = video_frame_provider.video_count()
-    # if inter_video_pairs:
     for video_a_id in range(video_count):
         print(f"Computing pair similarities ({video_a_id+1}/{video_count})")
         frame_pair_values = []
@@ -545,8 +543,8 @@ def calc_similarity_between_all_pairs(video_frame_provider, inter_video_pairs, m
                     similarity = abs(cycle_progression_a - cycle_progression_b)
                     similarity = min(similarity, 1 - similarity) * 2
                     video_frame_pair_values[i, j] = 1 - similarity
-                    # TODO compute masks if possible
-                    # video_frame_pair_masks[i, j] = 1 if self.max_cycles_for_pairs == 0 or abs(i - j) <= hb_freq * self.max_cycles_for_pairs else 0
+                    if max_cycles_for_pairs > 0 and video_a_id == video_b_id:
+                        video_frame_pair_masks[i, j] = 1 if abs(i - j) <= hb_freq_a * max_cycles_for_pairs else 0
 
             # plt.imshow(video_frame_pair_values)
             # plt.title(f"Similarity matrix for videos {video_a_id} and {video_b_id}")
@@ -556,24 +554,6 @@ def calc_similarity_between_all_pairs(video_frame_provider, inter_video_pairs, m
 
         all_frame_pair_values.append(frame_pair_values)
         all_frame_pair_masks.append(frame_pair_masks)
-    # else:
-    #     for video_id in range(video_count):
-    #         # print("video", video_id)
-    #         video_frame_provider.select_video(video_id)
-    #         video_frame_count = video_frame_provider.get_current_video_frame_count()
-    #         video_frame_pair_values = np.zeros((video_frame_count, video_frame_count))
-    #         video_frame_pair_masks = np.zeros((video_frame_count, video_frame_count))
-    #         hb_freq = video_frame_provider.get_current_video_heartbeat_frequency()
-    #         for i in range(video_frame_count):
-    #             a = i % hb_freq
-    #             for j in range(i+1, video_frame_count):
-    #                 b = j % hb_freq
-    #                 frame_diff = abs(a - b)
-    #                 frame_diff = min(frame_diff, hb_freq - frame_diff)
-    #                 video_frame_pair_values[i][j] = video_frame_pair_values[j][i] = 1 - frame_diff / (hb_freq / 2)
-    #                 video_frame_pair_masks[i][j] = video_frame_pair_masks[j][i] = 1 if max_cycles_for_pairs == 0 or abs(i - j) <= hb_freq * max_cycles_for_pairs else 0
-    #         all_frame_pair_values.append(video_frame_pair_values)
-    #         all_frame_pair_masks.append(video_frame_pair_masks)
 
     return all_frame_pair_values, all_frame_pair_masks
 

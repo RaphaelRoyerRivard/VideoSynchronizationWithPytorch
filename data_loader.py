@@ -576,7 +576,7 @@ def get_soft_multisiamese_datasets(training_paths, validation_paths, max_cycles_
     training_paths = [training_paths] if not type(training_paths) == list else training_paths
     validation_paths = [validation_paths] if not type(validation_paths) == list else validation_paths
     training_set = AngioSequenceSoftMultiSiameseDataset(training_paths, validation_paths, sequence, max_cycles_for_pairs, epoch_size, batch_size, inter_video_pairs, use_data_augmentation)
-    validation_set = None if validation_paths[0] is None else AngioSequenceSoftMultiSiameseDataset(validation_paths, [], sequence, max_cycles_for_pairs, round(epoch_size / 10), batch_size, inter_video_pairs, use_data_augmentation=False)
+    validation_set = None if validation_paths[0] is None else AngioSequenceSoftMultiSiameseDataset(validation_paths, [], sequence, max_cycles_for_pairs, round(epoch_size / 5), batch_size, inter_video_pairs, use_data_augmentation=False)
     return training_set, validation_set
 
 

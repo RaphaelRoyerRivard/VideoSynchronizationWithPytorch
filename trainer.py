@@ -4,11 +4,10 @@ import time
 from datetime import timedelta
 from matplotlib import pyplot as plt
 from sync_net import get_fc_weights
-# import wandb
 
 
 def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs, cuda, log_interval, metrics=[],
-        measure_weights=False, start_epoch=0, save_progress_path=None):
+        measure_weights=False, start_epoch=0, save_progress_path=None, show_plots=True):
     """
     Loaders, model, loss function and metrics should work together for a given task,
     i.e. The model should be able to process data output of loaders,
@@ -51,11 +50,6 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
             for metric in metrics:
                 message += '\t{}: {}'.format(metric.name(), metric.value())
 
-            # wandb.log({'epoch': epoch, 'train_loss': train_loss, 'val_loss': val_loss})
-
-        # else:
-        #     wandb.log({'epoch': epoch, 'loss': train_loss})
-
         print(message)
 
         if save_progress_path is not None:
@@ -72,7 +66,7 @@ def fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs
             with open(save_progress_path + "/progress.txt", "a") as progres_file:
                 progres_file.write(message + "\n\n")
 
-        if epoch > 0:
+        if epoch > 0 and show_plots:
             plt.plot(train_losses, color='orange', label='train_loss')
             plt.plot(val_losses, color='green', label='val_loss')
             plt.title("Loss progression")

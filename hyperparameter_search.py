@@ -122,7 +122,7 @@ def train():
     train_loader = DataLoader(training_set, batch_size=1, shuffle=False, num_workers=0)
     val_loader = DataLoader(validation_set, batch_size=1, shuffle=False, num_workers=0)
     metrics = []  # [EmbeddingCosineSimilarityAndDistanceLossMetric()]
-    fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs, cuda, log_interval, start_epoch=start_epoch, save_progress_path=save_path, metrics=metrics, measure_weights=True)
+    fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs, cuda, log_interval, start_epoch=start_epoch, save_progress_path=save_path, metrics=metrics, measure_weights=True, show_plots=False)
 
 
 def load_best_model():

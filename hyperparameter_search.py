@@ -30,33 +30,28 @@ random_parameters = {
     "batch_size": [16, 32, 64],
     "dropout": [False, True],
     "dropout_rate": (0.01, 0.6),
-    # "scheduler_type": ["step", "warm_restart"]
+    "scheduler_type": ["step", "cosine_annealing"],
     "scheduler_step_size": (3, 7),
     "scheduler_gamma": (0.01, 0.2),
-    "max_cycles_for_pairs": (1.0, 5.0)
+    "scheduler_eta_min": (0, 1e-5),
+    "use_max_cycles": [False, True],
+    "max_cycles_for_pairs": (1.0, 5.0),
+    "inter_video_pairs": [False, True],
+    "data_augmentation": [False, True]
 }
-
-# random_parameters_step_scheduler = {
-#     "step_size": (3, 7),
-#     "gamma": (0.01, 0.2)
-# }
-#
-# random_parameters_warm_restart_scheduler = {
-#     "step_size": (3, 7),
-#     "gamma": (0.01, 0.2)
-# }
 
 
 def generate_config():
     config = {}
     for key, value in random_parameters.items():
         if type(value) is tuple:
-            if type(value[0]) is int:
+            if type(value[0]) is int and type(value[1]) is int:
                 config[key] = np.random.randint(value[0], value[1] + 1)
             else:
                 config[key] = np.random.rand() * (value[1] - value[0]) + value[0]
         else:
             config[key] = value[np.random.randint(len(value))]
+    print("Generated config:", config)
     return config
 
 
@@ -78,9 +73,12 @@ def setup():
     # loss_fn = LosslessTripletLoss()
     # loss_fn = MultiSiameseCosineSimilarityLoss()
     loss_fn = SoftMultiSiameseCosineSimilarityLoss()
-    # scheduler = lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=4, T_mult=2, eta_min=5e-6, last_epoch=-1)
-    scheduler = lr_scheduler.StepLR(optimizer, config["scheduler_step_size"], gamma=config["scheduler_gamma"], last_epoch=-1)
     n_epochs = 20
+    if config["scheduler_type"] == "step":
+        scheduler = lr_scheduler.StepLR(optimizer, config["scheduler_step_size"], gamma=config["scheduler_gamma"], last_epoch=-1)
+    else:
+        scheduler = lr_scheduler.CosineAnnealingLr(optimizer, T_max=n_epochs, eta_min=config["scheduler_eta_min"], last_epoch=-1)
+    # scheduler = lr_scheduler.CosineAnnealingLr(optimizer, T_0=4, T_mult=2, eta_min=5e-6, last_epoch=-1)
     log_interval = 100
     start_epoch = 0
     save_path = r"E:\Users\root\Projects\VideoSynchronizationWithPytorch\trainings\hyperparameter_search"
@@ -109,11 +107,11 @@ def load_training_set():
         r'C:\Users\root\Data\Angiographie\G1',
         r'C:\Users\root\Data\Angiographie\G18'
     ]
-    max_cycles_for_pairs = config["max_cycles_for_pairs"]
+    max_cycles_for_pairs = config["max_cycles_for_pairs"] if config["use_max_cycles"] else 0
     sequence = 3
     batch_size = config["batch_size"]
-    inter_video_pairs = False
-    use_data_augmentation = False
+    inter_video_pairs = config["inter_video_pairs"]
+    use_data_augmentation = config["data_augmentation"]
     training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_paths, max_cycles_for_pairs, sequence, 1000, batch_size, inter_video_pairs, use_data_augmentation)
     return training_set, validation_set
 

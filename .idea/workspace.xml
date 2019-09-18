@@ -2,8 +2,8 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="970c7e55-fbd1-4ae5-9d99-6a4bda0df285" name="Default" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/hyperparameter_search.py" beforeDir="false" afterPath="$PROJECT_DIR$/hyperparameter_search.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/main.ipynb" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="TRACKING_ENABLED" value="true" />
@@ -26,25 +26,13 @@
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="hyperparameter_search.py" pinned="false" current-in-tab="true">
+      <file leaf-file-name="hyperparameter_search.py" pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/hyperparameter_search.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="461">
-              <caret line="53" column="37" selection-start-line="53" selection-start-column="37" selection-end-line="53" selection-end-column="37" />
+            <state relative-caret-position="389">
+              <caret line="39" column="40" selection-start-line="39" selection-start-column="40" selection-end-line="39" selection-end-column="40" />
               <folding>
                 <element signature="e#0#28#0" expanded="true" />
-              </folding>
-            </state>
-          </provider>
-        </entry>
-      </file>
-      <file leaf-file-name="lr_scheduler.pyi" pinned="false" current-in-tab="false">
-        <entry file="file://E:/Logiciels/Anaconda3/envs/torch/Lib/site-packages/torch/optim/lr_scheduler.pyi">
-          <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="323">
-              <caret line="22" column="5" selection-start-line="22" selection-start-column="5" selection-end-line="22" selection-end-column="5" />
-              <folding>
-                <element signature="e#0#42#0" expanded="true" />
               </folding>
             </state>
           </provider>
@@ -62,11 +50,11 @@
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="read_hyperparameter_search_results.py" pinned="false" current-in-tab="false">
+      <file leaf-file-name="read_hyperparameter_search_results.py" pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/read_hyperparameter_search_results.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="323">
-              <caret line="19" column="17" selection-start-line="19" selection-start-column="17" selection-end-line="19" selection-end-column="17" />
+            <state relative-caret-position="187">
+              <caret line="11" column="28" lean-forward="true" selection-start-line="11" selection-start-column="28" selection-end-line="11" selection-end-column="28" />
             </state>
           </provider>
         </entry>
@@ -120,7 +108,7 @@
       </list>
     </option>
   </component>
-  <component name="ProjectFrameBounds" extendedState="6">
+  <component name="ProjectFrameBounds" extendedState="7">
     <option name="x" value="-7" />
     <option name="width" value="974" />
     <option name="height" value="1047" />
@@ -182,7 +170,7 @@
       <option name="EMULATE_TERMINAL" value="false" />
       <option name="MODULE_MODE" value="false" />
     </configuration>
-    <configuration name="metrics" type="PythonConfigurationType" factoryName="Python" temporary="true">
+    <configuration name="hyperparameter_search" type="PythonConfigurationType" factoryName="Python" temporary="true">
       <module name="VideoSynchronizationWithPytorch" />
       <option name="INTERPRETER_OPTIONS" value="" />
       <option name="PARENT_ENVS" value="true" />
@@ -194,7 +182,7 @@
       <option name="IS_MODULE_SDK" value="true" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/metrics.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/hyperparameter_search.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -257,17 +245,17 @@
     <list>
       <item itemvalue="Python.sync_net" />
       <item itemvalue="Python.data_loader" />
-      <item itemvalue="Python.metrics" />
       <item itemvalue="Python.training" />
       <item itemvalue="Python.read_hyperparameter_search_results" />
+      <item itemvalue="Python.hyperparameter_search" />
     </list>
     <recent_temporary>
       <list>
         <item itemvalue="Python.read_hyperparameter_search_results" />
+        <item itemvalue="Python.hyperparameter_search" />
         <item itemvalue="Python.training" />
         <item itemvalue="Python.data_loader" />
         <item itemvalue="Python.sync_net" />
-        <item itemvalue="Python.metrics" />
       </list>
     </recent_temporary>
   </component>
@@ -278,9 +266,9 @@
     <frame x="-8" y="-8" width="1936" height="1056" extended-state="6" />
     <editor active="true" />
     <layout>
-      <window_info content_ui="combo" id="Project" order="0" visible="true" weight="0.24973656" />
+      <window_info content_ui="combo" id="Project" order="0" visible="true" weight="0.19810326" />
       <window_info anchor="bottom" id="Educational.CheckDetails" order="7" show_stripe_button="false" />
-      <window_info active="true" anchor="bottom" id="Run" order="2" visible="true" weight="0.3297062" />
+      <window_info active="true" anchor="bottom" id="Run" order="2" visible="true" weight="0.28726876" />
       <window_info anchor="bottom" id="Version Control" order="9" />
       <window_info anchor="bottom" id="Python Console" order="8" />
       <window_info anchor="bottom" id="Debug" order="3" weight="0.39934713" />
@@ -439,13 +427,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/read_hyperparameter_search_results.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="323">
-          <caret line="19" column="17" selection-start-line="19" selection-start-column="17" selection-end-line="19" selection-end-column="17" />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/trainer.py">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="1226">
@@ -468,11 +449,18 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/hyperparameter_search.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="461">
-          <caret line="53" column="37" selection-start-line="53" selection-start-column="37" selection-end-line="53" selection-end-column="37" />
+        <state relative-caret-position="389">
+          <caret line="39" column="40" selection-start-line="39" selection-start-column="40" selection-end-line="39" selection-end-column="40" />
           <folding>
             <element signature="e#0#28#0" expanded="true" />
           </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/read_hyperparameter_search_results.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="187">
+          <caret line="11" column="28" lean-forward="true" selection-start-line="11" selection-start-column="28" selection-end-line="11" selection-end-column="28" />
         </state>
       </provider>
     </entry>

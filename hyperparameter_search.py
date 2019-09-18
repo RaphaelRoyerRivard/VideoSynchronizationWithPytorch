@@ -37,7 +37,7 @@ random_parameters = {
     "use_max_cycles": [False, True],
     "max_cycles_for_pairs": (1.0, 5.0),
     "inter_video_pairs": [False, True],
-    "data_augmentation": [False, True]
+    # "data_augmentation": [False, True]
 }
 
 
@@ -111,7 +111,7 @@ def load_training_set():
     sequence = 3
     batch_size = config["batch_size"]
     inter_video_pairs = config["inter_video_pairs"]
-    use_data_augmentation = config["data_augmentation"]
+    use_data_augmentation = False  # config["data_augmentation"]
     training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_paths, max_cycles_for_pairs, sequence, 1000, batch_size, inter_video_pairs, use_data_augmentation)
     return training_set, validation_set
 
@@ -210,19 +210,18 @@ def run_pathfinding():
     all_distance_scores = np.array([])
     all_similarity_scores = np.array([])
     ordered_distance_scores = []
+    all_paths = {}
     for batch_index_a, sequences_a in enumerate(test_loader):
         name_a = sequences_a[1][0]
-        sequences_a = sequences_a[0][0]
         for batch_index_b, sequences_b in enumerate(test_loader):
             name_b = sequences_b[1][0]
-            sequences_b = sequences_b[0][0]
             if name_b in distance_matrices[name_a]:
                 symmetrical = name_a == name_b
                 distance_matrix = np.copy(distance_matrices[name_a][name_b])
                 similarity_matrix = np.copy(similarity_matrices[name_a][name_b])
                 ground_truth = test_set.get_similarity_matrix(name_a, name_b)
-                for i in range(2):
-                    matrix = distance_matrix if i == 0 else similarity_matrix
+                for matrix_type in range(2):
+                    matrix = distance_matrix if matrix_type == 0 else similarity_matrix
                     line_value = matrix.max() * 1.5
                     if symmetrical:
                         # Erase center line
@@ -235,9 +234,14 @@ def run_pathfinding():
                                     matrix[i, i-offset] = matrix.max()
                     nodes = pathfinding(matrix, symmetrical)
                     scores = []
+                    if name_a not in all_paths:
+                        all_paths[name_a] = {}
+                    if name_b not in all_paths[name_a]:
+                        all_paths[name_a][name_b] = []
                     for pathfinding_index, node in enumerate(nodes):
                         pairs = []
                         current_scores = []
+                        path_scores = []
                         while node is not None:
                             pairs.append(node.point)
                             node = node.parent
@@ -245,19 +249,57 @@ def run_pathfinding():
                             continue
                         for point in pairs:
                             current_scores.append(ground_truth[point])
+                            path_scores.append((point, ground_truth[point]))
                             matrix[point] += line_value
                         scores += current_scores
+                        if matrix_type == 0:
+                            all_paths[name_a][name_b].append(path_scores)
 
                     scores = np.array(scores)
                     print(name_a, name_b, "Mean score:", scores.mean(), f"for {len(scores)} scores")
-                    if i == 0:
+                    if matrix_type == 0:
                         all_distance_scores = np.append(all_distance_scores, scores)
                         ordered_distance_scores.append((scores.mean(), name_a + " - " + name_b))
                     else:
                         all_similarity_scores = np.append(all_similarity_scores, scores)
 
     ordered_distance_scores.sort(key=lambda x: x[0])
-    return all_distance_scores, all_similarity_scores, ordered_distance_scores
+    return all_distance_scores, all_similarity_scores, ordered_distance_scores, all_paths
+
+
+def find_best_path():
+    average_score = 0
+    count = 0
+    for name_a, video_pairs in all_paths.items():
+        for name_b, paths in video_pairs.items():
+            # Find longest path
+            max_length = 0
+            for path in paths:
+                dist = np.sqrt((path[0][0][0] - path[-1][0][0]) ** 2 + (path[0][0][1] - path[-1][0][1]) ** 2)
+                if dist > max_length:
+                    max_length = dist
+
+            # Find the straightest long path
+            max_straightness = 0
+            straightest_path = -1
+            for path_index, path in enumerate(paths):
+                dist = np.sqrt((path[0][0][0] - path[-1][0][0]) ** 2 + (path[0][0][1] - path[-1][0][1]) ** 2)
+                if dist >= max_length * 0.9:
+                    straightness = dist / (len(path) - 1) / np.sqrt(2)
+                    if straightness > max_straightness:
+                        max_straightness = straightness
+                        straightest_path = path_index
+
+            score = np.array([x[1] for x in paths[straightest_path]]).mean()
+            average_score += score
+            count += 1
+            print(f"{name_a}, {name_b}: Path {straightest_path} of length {len(paths[straightest_path])} with straightness of {round(max_straightness * 1000) / 10}% and score of {round(score * 1000) / 1000}")
+
+    average_score /= count
+    print("Average score", average_score)
+    f = open(save_path + r"\result.txt", "w")
+    f.write(f"{round(average_score * 10000) / 10000}")
+    f.close()
 
 
 def compute_global_pathfinding_results():
@@ -280,5 +322,6 @@ if __name__ == '__main__':
     load_best_model()
     test_set, test_loader = load_test_set()
     distance_matrices, similarity_matrices = compute_matrices()
-    all_distance_scores, all_similarity_scores, ordered_distance_scores = run_pathfinding()
-    compute_global_pathfinding_results()
+    all_distance_scores, all_similarity_scores, ordered_distance_scores, all_paths = run_pathfinding()
+    find_best_path()
+    # compute_global_pathfinding_results()

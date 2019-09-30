@@ -295,10 +295,22 @@ def find_best_path():
                         max_straightness = straightness
                         straightest_path = path_index
 
+            # Find the max score path on the ground truth matrix
+            ground_truth = test_set.get_similarity_matrix(name_a, name_b)
+            symmetrical = name_a == name_b
+            starting_point = paths[straightest_path][0][0]
+            ground_truth_node = pathfinding(1-ground_truth, symmetrical, starting_points=[starting_point])[0]
+            ground_truth_path = []
+            while ground_truth_node is not None:
+                ground_truth_path.append((ground_truth_node.point, ground_truth[ground_truth_node.point]))
+                ground_truth_node = ground_truth_node.parent
+
             score = np.array([x[1] for x in paths[straightest_path]]).mean()
-            average_score += score
+            max_score = np.array([x[1] for x in ground_truth_path]).mean()
+            adjusted_score = score / max_score
+            average_score += adjusted_score
             count += 1
-            print(f"{name_a}, {name_b}: Path {straightest_path} of length {len(paths[straightest_path])} with straightness of {round(max_straightness * 1000) / 10}% and score of {round(score * 1000) / 1000}")
+            print(f"{name_a}, {name_b}: Path {straightest_path} of length {len(paths[straightest_path])} with straightness of {round(max_straightness * 1000) / 10}% and score of {round(score * 1000) / 1000}/{round(max_score * 1000) / 1000}={round(adjusted_score * 1000) / 1000}")
 
     average_score /= count
     print("Average score", average_score)

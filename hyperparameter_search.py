@@ -30,15 +30,30 @@ random_parameters = {
     "batch_size": [16, 32, 64],
     "dropout": [False, True],
     "dropout_rate": (0.01, 0.6),
-    "scheduler_type": ["step", "cosine_annealing"],
+    "scheduler_type": ["step"],  # "cosine_annealing"],
     "scheduler_step_size": (3, 7),
     "scheduler_gamma": (0.01, 0.2),
+    "scheduler_t_mult": (0.5, 2),
     "scheduler_eta_min": (0, 1e-5),
     "use_max_cycles": [False, True],
     "max_cycles_for_pairs": (1.0, 5.0),
     "inter_video_pairs": [False, True],
     # "data_augmentation": [False, True]
 }
+
+
+def generate_xp_folder():
+    save_path = r"E:\Users\root\Projects\VideoSynchronizationWithPytorch\trainings\hyperparameter_search"
+    highest_id = 0
+    if os.path.isdir(save_path):
+        for folder in os.listdir(save_path):
+            id = int(folder)
+            if id > highest_id:
+                highest_id = id
+    save_path += fr"\{highest_id + 1}"
+    if not os.path.isdir(save_path):
+        os.makedirs(save_path)
+    return save_path
 
 
 def generate_config():
@@ -52,6 +67,10 @@ def generate_config():
         else:
             config[key] = value[np.random.randint(len(value))]
     print("Generated config:", config)
+    config_file = json.dumps(config)
+    f = open(save_path + r"\config.json", "w")
+    f.write(config_file)
+    f.close()
     return config
 
 
@@ -77,27 +96,13 @@ def setup():
     if config["scheduler_type"] == "step":
         scheduler = lr_scheduler.StepLR(optimizer, config["scheduler_step_size"], gamma=config["scheduler_gamma"], last_epoch=-1)
     else:
-        scheduler = lr_scheduler.CosineAnnealingLr(optimizer, T_max=n_epochs, eta_min=config["scheduler_eta_min"], last_epoch=-1)
-    # scheduler = lr_scheduler.CosineAnnealingLr(optimizer, T_0=4, T_mult=2, eta_min=5e-6, last_epoch=-1)
+        # scheduler = lr_scheduler.CosineAnnealingLr(optimizer, T_max=n_epochs, eta_min=config["scheduler_eta_min"], last_epoch=-1)
+        # scheduler = lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=4, T_mult=2, eta_min=5e-6, last_epoch=-1)
+        scheduler = lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=config["scheduler_step_size"], T_mult=config["scheduler_t_mult"], eta_min=config["scheduler_eta_min"], last_epoch=-1)
     log_interval = 100
     start_epoch = 0
-    save_path = r"E:\Users\root\Projects\VideoSynchronizationWithPytorch\trainings\hyperparameter_search"
-    highest_id = 0
-    if os.path.isdir(save_path):
-        for folder in os.listdir(save_path):
-            id = int(folder)
-            if id > highest_id:
-                highest_id = id
-    save_path += fr"\{highest_id + 1}"
-    if not os.path.isdir(save_path):
-        os.makedirs(save_path)
 
-    config_file = json.dumps(config)
-    f = open(save_path + r"\config.json", "w")
-    f.write(config_file)
-    f.close()
-
-    return model, loss_fn, optimizer, scheduler, n_epochs, log_interval, start_epoch, save_path
+    return model, loss_fn, optimizer, scheduler, n_epochs, log_interval, start_epoch
 
 
 def load_training_set():
@@ -315,8 +320,9 @@ def compute_global_pathfinding_results():
 
 
 if __name__ == '__main__':
+    save_path = generate_xp_folder()
     config = generate_config()
-    model, loss_fn, optimizer, scheduler, n_epochs, log_interval, start_epoch, save_path = setup()
+    model, loss_fn, optimizer, scheduler, n_epochs, log_interval, start_epoch = setup()
     training_set, validation_set = load_training_set()
     train()
     load_best_model()

@@ -498,7 +498,7 @@ class AngioSequenceTestDataset(Dataset):
             temp = index_a
             index_a = index_b
             index_b = temp
-        return self.frame_pair_values[index_a][index_b-index_a]
+        return self.frame_pair_values[index_a][index_b-index_a][2:, 2:]  # We want to skip the first two frames as they are used in the first sequence
 
 
 def calc_similarity_between_all_pairs(video_frame_provider, max_cycles_for_pairs=0.):

@@ -3,6 +3,7 @@ import json
 import torch
 import torch.nn as nn
 import torchvision.models as models
+from efficientnet_pytorch import EfficientNet
 from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader
 import numpy as np
@@ -25,9 +26,10 @@ from utils import pathfinding
 cuda = torch.cuda.is_available()
 
 random_parameters = {
+    "model_type": ["efficientnet-b0", "efficientnet-b1", "efficientnet-b2", "efficientnet-b3", "efficientnet-b4", "efficientnet-b5", "efficientnet-b6", "efficientnet-b7"],  # "mobilenet"],
     "lr": (1e-3, 1e-5),
     "fc": [4, 8, 16, 32, 64, 128, 256, 512],
-    "batch_size": [16, 32, 64],
+    "batch_size": [16, 32],  # , 64],
     "dropout": [False, True],
     "dropout_rate": (0.01, 0.6),
     "scheduler_type": ["step"],  # "cosine_annealing"],
@@ -76,7 +78,7 @@ def generate_config():
 
 def setup():
     torch.cuda.set_device(0)
-    embedding_net = models.mobilenet_v2(pretrained=True)
+    embedding_net = models.mobilenet_v2(pretrained=True) if config["model_type"] == "mobilenet" else EfficientNet.from_pretrained(config["model_type"])
     if config["dropout"]:
         replace_last_layer(embedding_net, config["fc"], dropout=config["dropout_rate"])
     else:
@@ -117,8 +119,24 @@ def load_training_set():
     batch_size = config["batch_size"]
     inter_video_pairs = config["inter_video_pairs"]
     use_data_augmentation = False  # config["data_augmentation"]
-    training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_paths, max_cycles_for_pairs, sequence, 1000, batch_size, inter_video_pairs, use_data_augmentation)
+    img_size = get_image_size_from_model_type(config["model_type"])
+    training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_paths, max_cycles_for_pairs, sequence, 1000, batch_size, inter_video_pairs, use_data_augmentation, img_size)
     return training_set, validation_set
+
+
+def get_image_size_from_model_type(model_type):
+    image_size = {
+        "mobilenet": 224,
+        "efficientnet-b0": 224,
+        "efficientnet-b1": 240,
+        "efficientnet-b2": 260,
+        "efficientnet-b3": 300,
+        "efficientnet-b4": 380,
+        "efficientnet-b5": 456,
+        "efficientnet-b6": 528,
+        "efficientnet-b7": 600
+    }
+    return image_size[model_type]
 
 
 def train():
@@ -225,7 +243,7 @@ def run_pathfinding():
                 distance_matrix = np.copy(distance_matrices[name_a][name_b])
                 similarity_matrix = np.copy(similarity_matrices[name_a][name_b])
                 ground_truth = test_set.get_similarity_matrix(name_a, name_b)
-                for matrix_type in range(2):
+                for matrix_type in range(1):  # Set to 2 to also compute scores on similarity matrix
                     matrix = distance_matrix if matrix_type == 0 else similarity_matrix
                     line_value = matrix.max() * 1.5
                     if symmetrical:

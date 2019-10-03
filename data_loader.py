@@ -45,7 +45,7 @@ class VideoFrameProvider(object):
         return self.contracted_frames[self.current_video_id]
 
 
-def get_all_valid_frames_in_paths(base_paths, paths_to_ignore):
+def get_all_valid_frames_in_paths(base_paths, paths_to_ignore, img_size=224):
     all_valid_frames = []
     video_names = []
     relevant_frames_file_name = "relevant_frames.txt"
@@ -84,7 +84,7 @@ def get_all_valid_frames_in_paths(base_paths, paths_to_ignore):
                 frame_id = int(filename.split("Frame")[1].split('.')[0])
                 if first_frame <= frame_id <= last_frame:
                     img = cv2.imread(path + "/" + filename, cv2.IMREAD_GRAYSCALE)
-                    img = cv2.resize(img, (224, 224))
+                    img = cv2.resize(img, (img_size, img_size))
                     img = img.astype(np.float32)
                     img /= 255
                     valid_frames.append((frame_id, img))
@@ -278,7 +278,7 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
     """
     Yield matrices of similarity between pairs
     """
-    def __init__(self, paths, path_to_ignores, sequence, max_cycles_for_pairs, epoch_size, batch_size, inter_video_pairs, use_data_augmentation):
+    def __init__(self, paths, path_to_ignores, sequence, max_cycles_for_pairs, epoch_size, batch_size, inter_video_pairs, use_data_augmentation, img_size=224):
         """
         Sample most trivial training data for phase 0 (intra-video sampling of consecutive frames)
 
@@ -291,7 +291,7 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
             batch_size (int): Size of the sampled matrices
             inter_video_pairs (bool): True to pair the frames of different videos together, False to limit to only intra-video pairs
         """
-        self.files, self.names = get_all_valid_frames_in_paths(paths, path_to_ignores)
+        self.files, self.names = get_all_valid_frames_in_paths(paths, path_to_ignores, img_size)
         self.video_frame_provider = VideoFrameProvider(images=self.files, names=self.names)
         self.sequence = sequence
         self.max_cycles_for_pairs = max_cycles_for_pairs
@@ -572,11 +572,11 @@ def get_multisiamese_datasets(training_path, validation_path, epoch_size, batch_
     return training_set, validation_set
 
 
-def get_soft_multisiamese_datasets(training_paths, validation_paths, max_cycles_for_pairs, sequence, epoch_size, batch_size, inter_video_pairs, use_data_augmentation):
+def get_soft_multisiamese_datasets(training_paths, validation_paths, max_cycles_for_pairs, sequence, epoch_size, batch_size, inter_video_pairs, use_data_augmentation, img_size=224):
     training_paths = [training_paths] if not type(training_paths) == list else training_paths
     validation_paths = [validation_paths] if not type(validation_paths) == list else validation_paths
-    training_set = AngioSequenceSoftMultiSiameseDataset(training_paths, validation_paths, sequence, max_cycles_for_pairs, epoch_size, batch_size, inter_video_pairs, use_data_augmentation)
-    validation_set = None if validation_paths[0] is None else AngioSequenceSoftMultiSiameseDataset(validation_paths, [], sequence, max_cycles_for_pairs, round(epoch_size / 5), batch_size, inter_video_pairs, use_data_augmentation=False)
+    training_set = AngioSequenceSoftMultiSiameseDataset(training_paths, validation_paths, sequence, max_cycles_for_pairs, epoch_size, batch_size, inter_video_pairs, use_data_augmentation, img_size=img_size)
+    validation_set = None if validation_paths[0] is None else AngioSequenceSoftMultiSiameseDataset(validation_paths, [], sequence, max_cycles_for_pairs, round(epoch_size / 5), batch_size, inter_video_pairs, use_data_augmentation=False, img_size=img_size)
     return training_set, validation_set
 
 

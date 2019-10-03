@@ -294,7 +294,11 @@ def replace_last_layer(model, out_features, dropout=0):
 
 
 def get_fc_weights(model):
-    fc = model.classifier if hasattr(model, 'classifier') else model.fc
+    fc = None
+    if hasattr(model, 'classifier'):
+        fc = model.classifier
+    elif hasattr(model, '_fc'):
+        fc = model._fc
     if type(fc) == nn.modules.container.Sequential:
         return list(fc.modules())[-1].weight
     return fc.weight

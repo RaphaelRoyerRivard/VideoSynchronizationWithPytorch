@@ -45,6 +45,21 @@ class VideoFrameProvider(object):
         return self.contracted_frames[self.current_video_id]
 
 
+def get_image_size_from_model_type(model_type):
+    image_size = {
+        "mobilenet": 224,
+        "efficientnet-b0": 224,
+        "efficientnet-b1": 240,
+        "efficientnet-b2": 260,
+        "efficientnet-b3": 300,
+        "efficientnet-b4": 380,
+        "efficientnet-b5": 456,
+        "efficientnet-b6": 528,
+        "efficientnet-b7": 600
+    }
+    return image_size[model_type]
+
+
 def get_all_valid_frames_in_paths(base_paths, paths_to_ignore, img_size=224):
     all_valid_frames = []
     video_names = []
@@ -471,8 +486,8 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
 
 class AngioSequenceTestDataset(Dataset):
 
-    def __init__(self, paths):
-        self.files, self.names = get_all_valid_frames_in_paths(paths, [])
+    def __init__(self, paths, img_size=224):
+        self.files, self.names = get_all_valid_frames_in_paths(paths, [], img_size)
         self.video_frame_provider = VideoFrameProvider(images=self.files, names=self.names)
         self.sequence_length = 3
         self.frame_pair_values, _ = calc_similarity_between_all_pairs(self.video_frame_provider)
@@ -588,9 +603,9 @@ def get_datasets(training_path, validation_path):
     return training_set, validation_set
 
 
-def get_test_set(test_paths):
+def get_test_set(test_paths, img_size=224):
     test_paths = [test_paths] if not type(test_paths) == list else test_paths
-    return AngioSequenceTestDataset(test_paths)
+    return AngioSequenceTestDataset(test_paths, img_size)
 
 
 def get_frame_indices_of_most_distant_similar_pair_with_randomness(similarity_matrix, masks, real_frame_indices):

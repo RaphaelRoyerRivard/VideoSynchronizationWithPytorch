@@ -222,7 +222,7 @@ class SoftMultiSiameseCosineSimilarityLoss(nn.Module):
         diff = torch.abs(cosine_similarities - similarity_matrix)
         nonzero = torch.nonzero(diff)
         count = nonzero.shape[0]
-        similarity_loss = diff.sum() / count if count > 0 else 0
+        similarity_loss = diff.sum() / count if count > 0 else torch.tensor(0)
 
         return similarity_loss, similarity_loss, 0
 

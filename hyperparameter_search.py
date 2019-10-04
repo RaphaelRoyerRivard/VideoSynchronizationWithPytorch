@@ -21,15 +21,15 @@ reload(utils)
 from sync_net import reset_first_layer, replace_last_layer, add_sigmoid_activation, stop_running_var, freeze_model, TripletNet, MultiSiameseNet, TripletLoss, CosineSimilarityTripletLoss, LosslessTripletLoss, MultiSiameseCosineSimilarityLoss, SoftMultiSiameseCosineSimilarityLoss
 from trainer import fit
 from metrics import EmbeddingL2DistanceMetric, EmbeddingCosineSimilarityMetric, EmbeddingCosineSimilarityAndDistanceLossMetric
-from data_loader import get_datasets, get_test_set, get_multisiamese_datasets, get_soft_multisiamese_datasets
+from data_loader import get_image_size_from_model_type, get_datasets, get_test_set, get_multisiamese_datasets, get_soft_multisiamese_datasets
 from utils import pathfinding
 cuda = torch.cuda.is_available()
 
 random_parameters = {
     "model_type": ["efficientnet-b0", "efficientnet-b1", "efficientnet-b2", "efficientnet-b3", "efficientnet-b4", "efficientnet-b5", "efficientnet-b6", "efficientnet-b7"],  # "mobilenet"],
     "lr": (1e-3, 1e-5),
-    "fc": [4, 8, 16, 32, 64, 128, 256, 512],
-    "batch_size": [16, 32],  # , 64],
+    "fc": [4, 8, 16, 32, 64, 128, 256],
+    "batch_size": [8, 16, 32],  # , 64],
     "dropout": [False, True],
     "dropout_rate": (0.01, 0.6),
     "scheduler_type": ["step"],  # "cosine_annealing"],
@@ -42,6 +42,17 @@ random_parameters = {
     "inter_video_pairs": [False, True],
     # "data_augmentation": [False, True]
 }
+
+
+def get_max_batch_size_for_model_type(model_type):
+    max_batch_size = {
+        "efficientnet-b0": 32,
+        "efficientnet-b1": 32,
+        "efficientnet-b2": 24,
+        "efficientnet-b3": 15,
+        "efficientnet-b4": 6
+    }
+    return max_batch_size[model_type]
 
 
 def generate_xp_folder():
@@ -68,6 +79,10 @@ def generate_config():
                 config[key] = np.random.rand() * (value[1] - value[0]) + value[0]
         else:
             config[key] = value[np.random.randint(len(value))]
+            if key == "batch_size":
+                max_batch_size = get_max_batch_size_for_model_type(config["model_type"])
+                if config[key] > max_batch_size:
+                    config[key] = max_batch_size
     print("Generated config:", config)
     config_file = json.dumps(config)
     f = open(save_path + r"\config.json", "w")
@@ -124,21 +139,6 @@ def load_training_set():
     return training_set, validation_set
 
 
-def get_image_size_from_model_type(model_type):
-    image_size = {
-        "mobilenet": 224,
-        "efficientnet-b0": 224,
-        "efficientnet-b1": 240,
-        "efficientnet-b2": 260,
-        "efficientnet-b3": 300,
-        "efficientnet-b4": 380,
-        "efficientnet-b5": 456,
-        "efficientnet-b6": 528,
-        "efficientnet-b7": 600
-    }
-    return image_size[model_type]
-
-
 def train():
     train_loader = DataLoader(training_set, batch_size=1, shuffle=False, num_workers=0)
     val_loader = DataLoader(validation_set, batch_size=1, shuffle=False, num_workers=0)
@@ -169,7 +169,8 @@ def load_test_set():
         r'C:\Users\root\Data\Angiographie\G1',
         r'C:\Users\root\Data\Angiographie\G18'
     ]
-    test_set = get_test_set(test_paths)
+    img_size = get_image_size_from_model_type(config["model_type"])
+    test_set = get_test_set(test_paths, img_size)
     test_loader = DataLoader(test_set, batch_size=1, shuffle=False, num_workers=1)
     return test_set, test_loader
 

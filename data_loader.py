@@ -317,8 +317,8 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
         if use_data_augmentation:
             self.data_augmentation = transforms.Compose([
                 transforms.ToPILImage(),
-                transforms.ColorJitter(brightness=0.25, contrast=0.25, saturation=0.25, hue=0.25),
-                transforms.RandomResizedCrop(224, scale=(0.8, 1.)),
+                # transforms.ColorJitter(brightness=0.25, contrast=0.25, saturation=0.25, hue=0.25),
+                transforms.RandomResizedCrop(img_size, scale=(0.8, 1.)),
                 transforms.RandomAffine(degrees=10, translate=(0.1, 0.1), fillcolor=0)
             ])
         self.frame_pair_values, self.frame_pair_masks = calc_similarity_between_all_pairs(self.video_frame_provider, self.max_cycles_for_pairs)
@@ -514,6 +514,11 @@ class AngioSequenceTestDataset(Dataset):
             index_a = index_b
             index_b = temp
         return self.frame_pair_values[index_a][index_b-index_a][2:, 2:]  # We want to skip the first two frames as they are used in the first sequence
+
+    def get_hb_freq(self, video_name):
+        index = self.names.index(video_name)
+        self.video_frame_provider.select_video(index)
+        return self.video_frame_provider.get_current_video_heartbeat_frequency()
 
 
 def calc_similarity_between_all_pairs(video_frame_provider, max_cycles_for_pairs=0.):

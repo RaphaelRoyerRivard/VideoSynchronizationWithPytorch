@@ -26,10 +26,10 @@ from utils import pathfinding
 cuda = torch.cuda.is_available()
 
 random_parameters = {
-    "model_type": ["efficientnet-b0", "efficientnet-b1", "efficientnet-b2", "efficientnet-b3", "efficientnet-b4", "efficientnet-b5", "efficientnet-b6", "efficientnet-b7"],  # "mobilenet"],
+    "model_type": ["mobilenet", "efficientnet-b0", "efficientnet-b1"],  # "efficientnet-b2", "efficientnet-b3", "efficientnet-b4", "efficientnet-b5", "efficientnet-b6", "efficientnet-b7"],
     "lr": (1e-3, 1e-5),
     "fc": [4, 8, 16, 32, 64, 128, 256],
-    "batch_size": [8, 16, 32],  # , 64],
+    "batch_size": [8, 16, 32, 64],
     "dropout": [False, True],
     "dropout_rate": (0.01, 0.6),
     "scheduler_type": ["step"],  # "cosine_annealing"],
@@ -40,12 +40,13 @@ random_parameters = {
     "use_max_cycles": [False, True],
     "max_cycles_for_pairs": (1.0, 5.0),
     "inter_video_pairs": [False, True],
-    # "data_augmentation": [False, True]
+    "data_augmentation": [False, True]
 }
 
 
 def get_max_batch_size_for_model_type(model_type):
     max_batch_size = {
+        "mobilenet": 64,
         "efficientnet-b0": 32,
         "efficientnet-b1": 32,
         "efficientnet-b2": 24,
@@ -125,15 +126,17 @@ def setup():
 def load_training_set():
     training_path = r'C:\Users\root\Data\Angiographie'
     validation_paths = [
-        r'C:\Users\root\Data\Angiographie\ABL-5',
-        r'C:\Users\root\Data\Angiographie\G1',
-        r'C:\Users\root\Data\Angiographie\G18'
+        r'C:\Users\root\Data\Angiographie\AC-1',  # 6 sequences
+        r'C:\Users\root\Data\Angiographie\P31',  # 6 sequences
+        r'C:\Users\root\Data\Angiographie\KC-3',  # 6 sequences
+        r'C:\Users\root\Data\Angiographie\P28',  # 13 sequences
+        r'C:\Users\root\Data\Angiographie\P26'  # 10 sequences
     ]
     max_cycles_for_pairs = config["max_cycles_for_pairs"] if config["use_max_cycles"] else 0
     sequence = 3
     batch_size = config["batch_size"]
     inter_video_pairs = config["inter_video_pairs"]
-    use_data_augmentation = False  # config["data_augmentation"]
+    use_data_augmentation = config["data_augmentation"]
     img_size = get_image_size_from_model_type(config["model_type"])
     training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_paths, max_cycles_for_pairs, sequence, 1000, batch_size, inter_video_pairs, use_data_augmentation, img_size)
     return training_set, validation_set
@@ -165,9 +168,11 @@ def load_best_model():
 
 def load_test_set():
     test_paths = [
-        r'C:\Users\root\Data\Angiographie\ABL-5',
-        r'C:\Users\root\Data\Angiographie\G1',
-        r'C:\Users\root\Data\Angiographie\G18'
+        r'C:\Users\root\Data\Angiographie\AC-1',  # 6 sequences
+        r'C:\Users\root\Data\Angiographie\P31',  # 6 sequences
+        r'C:\Users\root\Data\Angiographie\KC-3',  # 6 sequences
+        r'C:\Users\root\Data\Angiographie\P28',  # 13 sequences
+        r'C:\Users\root\Data\Angiographie\P26'  # 10 sequences
     ]
     img_size = get_image_size_from_model_type(config["model_type"])
     test_set = get_test_set(test_paths, img_size)

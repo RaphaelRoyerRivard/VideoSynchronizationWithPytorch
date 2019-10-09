@@ -70,7 +70,7 @@ def generate_xp_folder():
     return save_path
 
 
-def generate_config():
+def generate_config(save_path):
     config = {}
     for key, value in random_parameters.items():
         if type(value) is tuple:
@@ -92,7 +92,7 @@ def generate_config():
     return config
 
 
-def setup():
+def setup(config):
     torch.cuda.set_device(0)
     embedding_net = models.mobilenet_v2(pretrained=True) if config["model_type"] == "mobilenet" else EfficientNet.from_pretrained(config["model_type"])
     if config["dropout"]:
@@ -123,7 +123,7 @@ def setup():
     return model, loss_fn, optimizer, scheduler, n_epochs, log_interval, start_epoch
 
 
-def load_training_set():
+def load_training_set(config):
     training_path = r'C:\Users\root\Data\Angiographie'
     validation_paths = [
         r'C:\Users\root\Data\Angiographie\AC-1',  # 6 sequences
@@ -142,14 +142,14 @@ def load_training_set():
     return training_set, validation_set
 
 
-def train():
+def train(training_set, validation_set, model, loss_fn, optimizer, scheduler, n_epochs, log_interval, start_epoch, save_path):
     train_loader = DataLoader(training_set, batch_size=1, shuffle=False, num_workers=0)
     val_loader = DataLoader(validation_set, batch_size=1, shuffle=False, num_workers=0)
     metrics = []  # [EmbeddingCosineSimilarityAndDistanceLossMetric()]
     fit(train_loader, val_loader, model, loss_fn, optimizer, scheduler, n_epochs, cuda, log_interval, start_epoch=start_epoch, save_progress_path=save_path, metrics=metrics, measure_weights=True, show_plots=False)
 
 
-def load_best_model():
+def load_best_model(save_path, model):
     test_folder_path = save_path
     # Find latest model weights in folder
     latest_epoch = -1
@@ -166,7 +166,7 @@ def load_best_model():
     model.eval()
 
 
-def load_test_set():
+def load_test_set(config):
     test_paths = [
         r'C:\Users\root\Data\Angiographie\AC-1',  # 6 sequences
         r'C:\Users\root\Data\Angiographie\P31',  # 6 sequences
@@ -180,7 +180,7 @@ def load_test_set():
     return test_set, test_loader
 
 
-def compute_matrices():
+def compute_matrices(test_loader, model):
     def calc_distance_and_similarity_matrices(embeddings1, embeddings2):
         distances = []
         similarities = []
@@ -217,6 +217,7 @@ def compute_matrices():
 
         distance_matrices = {}
         similarity_matrices = {}
+        combination_matrices = {}
         current_name = None
         for i in range(len(all_embeddings)):
             name_i = names[i].split(' ')[0]
@@ -224,6 +225,7 @@ def compute_matrices():
                 print(f"Combinations of {name_i}")
             distance_matrices[names[i]] = {}
             similarity_matrices[names[i]] = {}
+            combination_matrices[names[i]] = {}
             current_name = name_i
             for j in range(i, len(all_embeddings)):
                 if name_i == names[j].split(' ')[0]:
@@ -231,13 +233,15 @@ def compute_matrices():
                     distance_matrix, similarity_matrix = calc_distance_and_similarity_matrices(all_embeddings[i], all_embeddings[j])
                     distance_matrices[names[i]][names[j]] = distance_matrix
                     similarity_matrices[names[i]][names[j]] = similarity_matrix
+                    combination_matrices[names[i]][names[j]] = np.copy(distance_matrix * (similarity_matrix+1))
 
-        return distance_matrices, similarity_matrices
+        return distance_matrices, similarity_matrices, combination_matrices
 
 
-def run_pathfinding():
+def run_pathfinding(test_set, test_loader, distance_matrices, similarity_matrices, combination_matrices):
     all_distance_scores = np.array([])
     all_similarity_scores = np.array([])
+    all_combination_scores = np.array([])
     ordered_distance_scores = []
     all_paths = {}
     for batch_index_a, sequences_a in enumerate(test_loader):
@@ -248,9 +252,10 @@ def run_pathfinding():
                 symmetrical = name_a == name_b
                 distance_matrix = np.copy(distance_matrices[name_a][name_b])
                 similarity_matrix = np.copy(similarity_matrices[name_a][name_b])
+                combination_matrix = np.copy(combination_matrices[name_a][name_b])
                 ground_truth = test_set.get_similarity_matrix(name_a, name_b)
-                for matrix_type in range(1):  # Set to 2 to also compute scores on similarity matrix
-                    matrix = distance_matrix if matrix_type == 0 else similarity_matrix
+                for matrix_type in range(3):
+                    matrix = distance_matrix if matrix_type == 0 else similarity_matrix if matrix_type == 1 else combination_matrix
                     line_value = matrix.max() * 1.5
                     if symmetrical:
                         # Erase center line
@@ -266,7 +271,7 @@ def run_pathfinding():
                     if name_a not in all_paths:
                         all_paths[name_a] = {}
                     if name_b not in all_paths[name_a]:
-                        all_paths[name_a][name_b] = []
+                        all_paths[name_a][name_b] = ([], [], [])
                     for pathfinding_index, node in enumerate(nodes):
                         pairs = []
                         current_scores = []
@@ -281,89 +286,115 @@ def run_pathfinding():
                             path_scores.append((point, ground_truth[point]))
                             matrix[point] += line_value
                         scores += current_scores
-                        if matrix_type == 0:
-                            all_paths[name_a][name_b].append(path_scores)
+                        all_paths[name_a][name_b][matrix_type].append(path_scores)
 
                     scores = np.array(scores)
                     print(name_a, name_b, "Mean score:", scores.mean(), f"for {len(scores)} scores")
                     if matrix_type == 0:
                         all_distance_scores = np.append(all_distance_scores, scores)
                         ordered_distance_scores.append((scores.mean(), name_a + " - " + name_b))
-                    else:
+                    elif matrix_type == 1:
                         all_similarity_scores = np.append(all_similarity_scores, scores)
+                    else:
+                        all_combination_scores = np.append(all_combination_scores, scores)
 
     ordered_distance_scores.sort(key=lambda x: x[0])
-    return all_distance_scores, all_similarity_scores, ordered_distance_scores, all_paths
+    return all_distance_scores, all_similarity_scores, all_combination_scores, ordered_distance_scores, all_paths
 
 
-def find_best_path():
-    average_score = 0
+def find_best_path(all_paths, test_set, save_path):
+    average_scores = [0, 0, 0]
     count = 0
     for name_a, video_pairs in all_paths.items():
-        for name_b, paths in video_pairs.items():
-            # Find longest path
-            max_length = 0
-            for path in paths:
-                dist = np.sqrt((path[0][0][0] - path[-1][0][0]) ** 2 + (path[0][0][1] - path[-1][0][1]) ** 2)
-                if dist > max_length:
-                    max_length = dist
+        for name_b, matrix_types in video_pairs.items():
+            for matrix_type, paths in enumerate(matrix_types):
+                # Find longest path
+                max_length = 0
+                for path in paths:
+                    dist = np.sqrt((path[0][0][0] - path[-1][0][0]) ** 2 + (path[0][0][1] - path[-1][0][1]) ** 2)
+                    if dist > max_length:
+                        max_length = dist
 
-            # Find the straightest long path
-            max_straightness = 0
-            straightest_path = -1
-            for path_index, path in enumerate(paths):
-                dist = np.sqrt((path[0][0][0] - path[-1][0][0]) ** 2 + (path[0][0][1] - path[-1][0][1]) ** 2)
-                if dist >= max_length * 0.9:
-                    straightness = dist / (len(path) - 1) / np.sqrt(2)
-                    if straightness > max_straightness:
-                        max_straightness = straightness
-                        straightest_path = path_index
+                # Find the straightest long path
+                max_straightness = 0
+                straightest_path = -1
+                for path_index, path in enumerate(paths):
+                    dist = np.sqrt((path[0][0][0] - path[-1][0][0]) ** 2 + (path[0][0][1] - path[-1][0][1]) ** 2)
+                    if dist >= max_length * 0.9:
+                        straightness = dist / (len(path) - 1) / np.sqrt(2)
+                        if straightness > max_straightness:
+                            max_straightness = straightness
+                            straightest_path = path_index
 
-            # Find the max score path on the ground truth matrix
-            ground_truth = test_set.get_similarity_matrix(name_a, name_b)
-            symmetrical = name_a == name_b
-            starting_point = paths[straightest_path][0][0]
-            ground_truth_node = pathfinding(1-ground_truth, symmetrical, starting_points=[starting_point])[0]
-            ground_truth_path = []
-            while ground_truth_node is not None:
-                ground_truth_path.append((ground_truth_node.point, ground_truth[ground_truth_node.point]))
-                ground_truth_node = ground_truth_node.parent
+                if straightest_path > -1:
+                    # Find the max score path on the ground truth matrix
+                    ground_truth = test_set.get_similarity_matrix(name_a, name_b)
+                    symmetrical = name_a == name_b
+                    starting_point = paths[straightest_path][0][0]
+                    ground_truth_node = pathfinding(1-ground_truth, symmetrical, starting_points=[starting_point])[0]
+                    ground_truth_path = []
+                    while ground_truth_node is not None:
+                        ground_truth_path.append((ground_truth_node.point, ground_truth[ground_truth_node.point]))
+                        ground_truth_node = ground_truth_node.parent
 
-            score = np.array([x[1] for x in paths[straightest_path]]).mean()
-            max_score = np.array([x[1] for x in ground_truth_path]).mean()
-            adjusted_score = score / max_score
-            average_score += adjusted_score
+                    score = np.array([x[1] for x in paths[straightest_path]]).mean()
+                    max_score = np.array([x[1] for x in ground_truth_path]).mean()
+                    adjusted_score = score / max_score
+                    average_scores[matrix_type] += adjusted_score
+                    print(f"{name_a}, {name_b}: Path {straightest_path} of length {len(paths[straightest_path])} with straightness of {round(max_straightness * 1000) / 10}% and score of {round(score * 1000) / 1000}/{round(max_score * 1000) / 1000}={round(adjusted_score * 1000) / 1000}")
+                else:
+                    print(f"{name_a}, {name_b}, {matrix_type}: No valid path found. Score of 0")
             count += 1
-            print(f"{name_a}, {name_b}: Path {straightest_path} of length {len(paths[straightest_path])} with straightness of {round(max_straightness * 1000) / 10}% and score of {round(score * 1000) / 1000}/{round(max_score * 1000) / 1000}={round(adjusted_score * 1000) / 1000}")
 
-    average_score /= count
-    print("Average score", average_score)
     f = open(save_path + r"\result.txt", "w")
-    f.write(f"{round(average_score * 10000) / 10000}")
+    for i, matrix_type in enumerate(["Distance", "Similarity", "Combination"]):
+        print(f"Average score ({matrix_type})", average_scores[i] / count)
+        average_scores[i] /= count
+        f.write(f"{round(average_scores[i] * 10000) / 10000}\n")
     f.close()
 
 
-def compute_global_pathfinding_results():
-    print("Total distance score mean:", round(all_distance_scores.mean() * 10000) / 10000)
-    print("Total distance score variance:", round(all_distance_scores.var() * 10000) / 10000)
-    print("Total similarity score mean:", round(all_similarity_scores.mean() * 10000) / 10000)
-    print("Total similarity score variance:", round(all_similarity_scores.var() * 10000) / 10000)
-    print("Ordered distance scores:", ordered_distance_scores)
+# def compute_global_pathfinding_results():
+#     print("Total distance score mean:", round(all_distance_scores.mean() * 10000) / 10000)
+#     print("Total distance score variance:", round(all_distance_scores.var() * 10000) / 10000)
+#     print("Total similarity score mean:", round(all_similarity_scores.mean() * 10000) / 10000)
+#     print("Total similarity score variance:", round(all_similarity_scores.var() * 10000) / 10000)
+#     print("Ordered distance scores:", ordered_distance_scores)
+#
+#     f = open(save_path + r"\result.txt", "w")
+#     f.write(f"{round(all_distance_scores.mean() * 10000) / 10000}")
+#     f.close()
 
-    f = open(save_path + r"\result.txt", "w")
-    f.write(f"{round(all_distance_scores.mean() * 10000) / 10000}")
-    f.close()
+
+def evaluate_xps_without_result():
+    base_path = r"E:\Users\root\Projects\VideoSynchronizationWithPytorch\trainings\hyperparameter_search"
+    for path, subfolders, files in os.walk(base_path):
+        if "config.json" in files and "progress.txt" in files and "result.txt" not in files:
+            f = open(path + r"\config.json", 'r')
+            config = f.readline()
+            config = json.loads(config)
+            f.close()
+            save_path = path
+            model, _, _, _, _, _, _ = setup(config)
+            load_best_model(save_path, model)
+            test_set, test_loader = load_test_set(config)
+            distance_matrices, similarity_matrices, combination_matrices = compute_matrices(test_loader, model)
+            all_distance_scores, all_similarity_scores, all_combination_scores, ordered_distance_scores, all_paths = run_pathfinding(test_set, test_loader, distance_matrices, similarity_matrices, combination_matrices)
+            find_best_path(all_paths, test_set, save_path)
 
 
 if __name__ == '__main__':
-    save_path = generate_xp_folder()
-    config = generate_config()
-    model, loss_fn, optimizer, scheduler, n_epochs, log_interval, start_epoch = setup()
-    training_set, validation_set = load_training_set()
-    train()
-    load_best_model()
-    test_set, test_loader = load_test_set()
-    distance_matrices, similarity_matrices = compute_matrices()
-    all_distance_scores, all_similarity_scores, ordered_distance_scores, all_paths = run_pathfinding()
-    find_best_path()
-    # compute_global_pathfinding_results()
+    # # Generate config, train and evaluate
+    # save_path = generate_xp_folder()
+    # config = generate_config(save_path)
+    # model, loss_fn, optimizer, scheduler, n_epochs, log_interval, start_epoch = setup(config)
+    # training_set, validation_set = load_training_set(config)
+    # train(training_set, validation_set, model, loss_fn, optimizer, scheduler, n_epochs, log_interval, start_epoch, save_path)
+    # load_best_model(save_path, model)
+    # test_set, test_loader = load_test_set(config)
+    # distance_matrices, similarity_matrices, combination_matrices = compute_matrices(test_loader, model)
+    # all_distance_scores, all_similarity_scores, all_combination_scores, ordered_distance_scores, all_paths = run_pathfinding(test_set, test_loader, distance_matrices, similarity_matrices, combination_matrices)
+    # find_best_path(all_paths, test_set, save_path)
+
+    # Load configs and evaluate
+    evaluate_xps_without_result()

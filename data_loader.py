@@ -90,6 +90,9 @@ def get_all_valid_frames_in_paths(base_paths, paths_to_ignore, img_size=224):
             info = line.split(';')
             first_frame = int(info[0])
             last_frame = int(info[1])
+            if last_frame - first_frame + 1 < 15:
+                print(f"Ignoring video {patient} {angle} since it only has {last_frame - first_frame + 1} valid frames")
+                continue
             freq = float(info[2])
             contracted = float(info[3]) - first_frame
             assert 0 <= contracted <= last_frame, f"Contracted frame of id {contracted} for {patient} - {angle} should be a valid frame between {first_frame} and {last_frame}"

@@ -29,7 +29,7 @@ random_parameters = {
     "model_type": ["mobilenet", "efficientnet-b0", "efficientnet-b1"],  # "efficientnet-b2", "efficientnet-b3", "efficientnet-b4", "efficientnet-b5", "efficientnet-b6", "efficientnet-b7"],
     "lr": (1e-3, 1e-5),
     "fc": [4, 8, 16, 32, 64, 128, 256],
-    "batch_size": [8, 16, 32, 64],
+    "batch_size": [8, 16, 32],
     "dropout": [False, True],
     "dropout_rate": (0.01, 0.6),
     "scheduler_type": ["step"],  # "cosine_annealing"],
@@ -46,9 +46,9 @@ random_parameters = {
 
 def get_max_batch_size_for_model_type(model_type):
     max_batch_size = {
-        "mobilenet": 64,
-        "efficientnet-b0": 32,
-        "efficientnet-b1": 32,
+        "mobilenet": 32,
+        "efficientnet-b0": 24,
+        "efficientnet-b1": 12,
         "efficientnet-b2": 24,
         "efficientnet-b3": 15,
         "efficientnet-b4": 6
@@ -384,17 +384,17 @@ def evaluate_xps_without_result():
 
 
 if __name__ == '__main__':
-    # # Generate config, train and evaluate
-    # save_path = generate_xp_folder()
-    # config = generate_config(save_path)
-    # model, loss_fn, optimizer, scheduler, n_epochs, log_interval, start_epoch = setup(config)
-    # training_set, validation_set = load_training_set(config)
-    # train(training_set, validation_set, model, loss_fn, optimizer, scheduler, n_epochs, log_interval, start_epoch, save_path)
-    # load_best_model(save_path, model)
-    # test_set, test_loader = load_test_set(config)
-    # distance_matrices, similarity_matrices, combination_matrices = compute_matrices(test_loader, model)
-    # all_distance_scores, all_similarity_scores, all_combination_scores, ordered_distance_scores, all_paths = run_pathfinding(test_set, test_loader, distance_matrices, similarity_matrices, combination_matrices)
-    # find_best_path(all_paths, test_set, save_path)
+    # Generate config, train and evaluate
+    save_path = generate_xp_folder()
+    config = generate_config(save_path)
+    model, loss_fn, optimizer, scheduler, n_epochs, log_interval, start_epoch = setup(config)
+    training_set, validation_set = load_training_set(config)
+    train(training_set, validation_set, model, loss_fn, optimizer, scheduler, n_epochs, log_interval, start_epoch, save_path)
+    load_best_model(save_path, model)
+    test_set, test_loader = load_test_set(config)
+    distance_matrices, similarity_matrices, combination_matrices = compute_matrices(test_loader, model)
+    all_distance_scores, all_similarity_scores, all_combination_scores, ordered_distance_scores, all_paths = run_pathfinding(test_set, test_loader, distance_matrices, similarity_matrices, combination_matrices)
+    find_best_path(all_paths, test_set, save_path)
 
     # Load configs and evaluate
-    evaluate_xps_without_result()
+    # evaluate_xps_without_result()

@@ -14,8 +14,9 @@ class VideoFrameProvider(object):
         self.current_video_id = 0
         self.type = "images"
         self.frames = [x[0] for x in images]
-        self.hb_frequencies = [x[1] for x in images]
-        self.contracted_frames = [x[2] for x in images]
+        # self.hb_frequencies = [x[1] for x in images]
+        # self.contracted_frames = [x[2] for x in images]
+        self.r_peaks = [x[1] for x in images]
         self.names = names
 
     def _get_videos(self):
@@ -39,10 +40,18 @@ class VideoFrameProvider(object):
         return self.frames[self.current_video_id][frame_id]
 
     def get_current_video_heartbeat_frequency(self):
-        return self.hb_frequencies[self.current_video_id]
+        # return self.hb_frequencies[self.current_video_id]
+        r_peaks = self.get_current_video_r_peaks()
+        diffs = []
+        for i in range(1, len(r_peaks)):
+            diffs.append(r_peaks[i] - r_peaks[i-1])
+        return np.array(diffs).mean()
 
-    def get_current_video_contracted_frame(self):
-        return self.contracted_frames[self.current_video_id]
+    # def get_current_video_contracted_frame(self):
+    #     return self.contracted_frames[self.current_video_id]
+
+    def get_current_video_r_peaks(self):
+        return self.r_peaks[self.current_video_id]
 
 
 def get_image_size_from_model_type(model_type):
@@ -64,6 +73,7 @@ def get_all_valid_frames_in_paths(base_paths, paths_to_ignore, img_size=224):
     all_valid_frames = []
     video_names = []
     relevant_frames_file_name = "relevant_frames.txt"
+    r_peaks_file_name = "r-peaks.npy"
     for base_path in base_paths:
         for path, subfolders, files in os.walk(base_path):
             should_ignore = False
@@ -77,6 +87,8 @@ def get_all_valid_frames_in_paths(base_paths, paths_to_ignore, img_size=224):
                 continue
             if relevant_frames_file_name not in files:
                 continue
+            if r_peaks_file_name not in files:
+                continue
 
             split_path = path.split("\\export\\")
             angle = split_path[1]
@@ -85,21 +97,24 @@ def get_all_valid_frames_in_paths(base_paths, paths_to_ignore, img_size=224):
 
             valid_frames = []
             rfile = open(path + "/" + relevant_frames_file_name, "r")
-            line = rfile.readline()
+            relevant_frames_line = rfile.readline()
             rfile.close()
-            info = line.split(';')
+            info = relevant_frames_line.split(';')
             first_frame = int(info[0])
             last_frame = int(info[1])
             if last_frame - first_frame + 1 < 15:
                 print(f"Ignoring video {patient} {angle} since it only has {last_frame - first_frame + 1} valid frames")
                 continue
-            freq = float(info[2])
-            contracted = float(info[3]) - first_frame
-            assert 0 <= contracted <= last_frame, f"Contracted frame of id {contracted} for {patient} - {angle} should be a valid frame between {first_frame} and {last_frame}"
+            # freq = float(info[2])
+            # contracted = float(info[3]) - first_frame
+            # assert 0 <= contracted <= last_frame, f"Contracted frame of id {contracted} for {patient} - {angle} should be a valid frame between {first_frame} and {last_frame}"
+            frame_count = 0
             for filename in files:
                 if not bool(re.search('.*Frame[0-9]+\.jpg', filename)):
                     continue
                 frame_id = int(filename.split("Frame")[1].split('.')[0])
+                if frame_id > frame_count:
+                    frame_count = frame_id
                 if first_frame <= frame_id <= last_frame:
                     img = cv2.imread(path + "/" + filename, cv2.IMREAD_GRAYSCALE)
                     img = cv2.resize(img, (img_size, img_size))
@@ -108,8 +123,15 @@ def get_all_valid_frames_in_paths(base_paths, paths_to_ignore, img_size=224):
                     valid_frames.append((frame_id, img))
             valid_frames.sort()
             valid_frames = [x[1] for x in valid_frames]
-            all_valid_frames.append((valid_frames, freq, contracted))
-            print(len(valid_frames), f"valid frames [{first_frame}, {last_frame}] @{freq} and contracted at index {contracted}, in", path)
+            r_peaks = np.load(path + "\\" + r_peaks_file_name)
+            r_peaks = np.round(r_peaks * frame_count)
+            r_peaks = r_peaks[np.where(first_frame <= r_peaks)]
+            r_peaks = r_peaks[np.where(r_peaks <= last_frame)]
+            r_peaks = r_peaks - first_frame
+            # all_valid_frames.append((valid_frames, freq, contracted))
+            # print(len(valid_frames), f"valid frames [{first_frame}, {last_frame}] @{freq} and contracted at index {contracted}, in", path)
+            all_valid_frames.append((valid_frames, r_peaks))
+            print(len(valid_frames), f"valid frames [{first_frame}, {last_frame}] with {len(r_peaks)} R-peaks, in", path)
     return all_valid_frames, video_names
 
 
@@ -535,43 +557,70 @@ def calc_similarity_between_all_pairs(video_frame_provider, max_cycles_for_pairs
         video_frame_provider.select_video(video_a_id)
         video_a_frame_count = video_frame_provider.get_current_video_frame_count()
         hb_freq_a = video_frame_provider.get_current_video_heartbeat_frequency()
-        contracted_frame_a = video_frame_provider.get_current_video_contracted_frame()
-        contracted_a = contracted_frame_a % hb_freq_a
+        # contracted_frame_a = video_frame_provider.get_current_video_contracted_frame()
+        # contracted_a = contracted_frame_a % hb_freq_a
+        r_peaks_a = video_frame_provider.get_current_video_r_peaks()
         # Loop through all videos (even the same one)
         for video_b_id in range(video_a_id, video_count):
             video_frame_provider.select_video(video_b_id)
             video_b_frame_count = video_frame_provider.get_current_video_frame_count()
             hb_freq_b = video_frame_provider.get_current_video_heartbeat_frequency()
-            contracted_frame_b = video_frame_provider.get_current_video_contracted_frame()
-            contracted_b = contracted_frame_b % hb_freq_b
+            # contracted_frame_b = video_frame_provider.get_current_video_contracted_frame()
+            # contracted_b = contracted_frame_b % hb_freq_b
+            r_peaks_b = video_frame_provider.get_current_video_r_peaks()
             video_frame_pair_values = np.zeros((video_a_frame_count, video_b_frame_count))
             video_frame_pair_masks = np.ones((video_a_frame_count, video_b_frame_count))
 
             # Loop on each frame pair
             for i in range(video_a_frame_count):
                 # Compute cycle progression for frame i of video a
-                frame_a = i % hb_freq_a
-                cycle_distance_a = frame_a - contracted_a
-                cycle_distance_a = cycle_distance_a if cycle_distance_a >= 0 else cycle_distance_a + hb_freq_a
-                cycle_progression_a = cycle_distance_a / hb_freq_a
+                # frame_a = i % hb_freq_a
+                # cycle_distance_a = frame_a - contracted_a
+                # cycle_distance_a = cycle_distance_a if cycle_distance_a >= 0 else cycle_distance_a + hb_freq_a
+                # cycle_progression_a = cycle_distance_a / hb_freq_a
+                if i <= r_peaks_a[0]:
+                    previous_r_peak = 0 if r_peaks_a[0] >= hb_freq_a else round(r_peaks_a[0] - hb_freq_a)
+                else:
+                    previous_r_peak = int(r_peaks_a[(i - r_peaks_a[np.where(i - r_peaks_a > 0)[0]]).argmin()])
+                if i > r_peaks_a[-1]:
+                    next_r_peak = video_a_frame_count if video_a_frame_count - r_peaks_a[-1] >= hb_freq_a else r_peaks_a[-1] + hb_freq_a
+                else:
+                    for r_peak in r_peaks_a:
+                        if r_peak >= i:
+                            next_r_peak = int(r_peak)
+                            break
+                cycle_progression_a = (i - previous_r_peak) / (next_r_peak - previous_r_peak)
 
                 for j in range(video_b_frame_count):
                     # Compute cycle progression for frame j of video b
-                    frame_b = j % hb_freq_b
-                    cycle_distance_b = frame_b - contracted_b
-                    cycle_distance_b = cycle_distance_b if cycle_distance_b >= 0 else cycle_distance_b + hb_freq_b
-                    cycle_progression_b = cycle_distance_b / hb_freq_b
+                    # frame_b = j % hb_freq_b
+                    # cycle_distance_b = frame_b - contracted_b
+                    # cycle_distance_b = cycle_distance_b if cycle_distance_b >= 0 else cycle_distance_b + hb_freq_b
+                    # cycle_progression_b = cycle_distance_b / hb_freq_b
+                    if j <= r_peaks_b[0]:
+                        previous_r_peak = 0 if r_peaks_b[0] >= hb_freq_b else round(r_peaks_b[0] - hb_freq_b)
+                    else:
+                        previous_r_peak = int(r_peaks_b[(j - r_peaks_b[np.where(j - r_peaks_b > 0)[0]]).argmin()])
+                    if j > r_peaks_b[-1]:
+                        next_r_peak = video_b_frame_count if video_b_frame_count - r_peaks_b[-1] >= hb_freq_b else r_peaks_b[-1] + hb_freq_b
+                    else:
+                        for r_peak in r_peaks_b:
+                            if r_peak >= j:
+                                next_r_peak = int(r_peak)
+                                break
+                    cycle_progression_b = (j - previous_r_peak) / (next_r_peak - previous_r_peak)
 
                     # Compute similarity of the pair
                     similarity = abs(cycle_progression_a - cycle_progression_b)
                     similarity = min(similarity, 1 - similarity) * 2
                     video_frame_pair_values[i, j] = 1 - similarity
+                    # print(i, j, previous_r_peak, next_r_peak, video_frame_pair_values[i, j])
                     if max_cycles_for_pairs > 0 and video_a_id == video_b_id:
                         video_frame_pair_masks[i, j] = 1 if abs(i - j) <= hb_freq_a * max_cycles_for_pairs else 0
 
-            # plt.imshow(video_frame_pair_values)
-            # plt.title(f"Similarity matrix for videos {video_a_id} and {video_b_id}")
-            # plt.show()
+            plt.imshow(video_frame_pair_values)
+            plt.title(f"Similarity matrix for videos {video_a_id} and {video_b_id}")
+            plt.show()
             frame_pair_values.append(video_frame_pair_values)
             frame_pair_masks.append(video_frame_pair_masks)
 
@@ -646,7 +695,7 @@ def show_superimposed_frames(sequences, i, j, real_frame_indices, video_name):
 if __name__ == '__main__':
     # training_path = r'C:\Users\root\Data\Angiographie'
     # validation_path = r'C:\Users\root\Data\Angiographie\KR-11'
-    training_path = r'C:\Users\root\Data\Angiographie\AA-4'
+    training_path = r'C:\Users\root\Data\Angiographie\P20'
     validation_path = None
 
     # # Multisiamese

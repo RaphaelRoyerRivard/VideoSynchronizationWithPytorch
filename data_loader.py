@@ -124,10 +124,17 @@ def get_all_valid_frames_in_paths(base_paths, paths_to_ignore, img_size=224):
             valid_frames.sort()
             valid_frames = [x[1] for x in valid_frames]
             r_peaks = np.load(path + "\\" + r_peaks_file_name)
-            r_peaks = np.round(r_peaks * frame_count)
-            r_peaks = r_peaks[np.where(first_frame <= r_peaks)]
-            r_peaks = r_peaks[np.where(r_peaks <= last_frame)]
+            r_peaks = r_peaks * frame_count
             r_peaks = r_peaks - first_frame
+            valid_indices = np.where(r_peaks > 0)[0]
+            if len(valid_indices) > 0 and valid_indices[0] > 0:
+                valid_indices = np.append(valid_indices[0] - 1, valid_indices)
+            r_peaks = r_peaks[valid_indices]
+            valid_indices = np.where(r_peaks < last_frame - first_frame)[0]
+            if len(valid_indices) > 0 and valid_indices[-1] + 1 < len(r_peaks):
+                valid_indices = np.append(valid_indices, valid_indices[-1] + 1)
+            r_peaks = r_peaks[valid_indices]
+            print(first_frame, last_frame, r_peaks + first_frame)
             # all_valid_frames.append((valid_frames, freq, contracted))
             # print(len(valid_frames), f"valid frames [{first_frame}, {last_frame}] @{freq} and contracted at index {contracted}, in", path)
             all_valid_frames.append((valid_frames, r_peaks))
@@ -578,18 +585,7 @@ def calc_similarity_between_all_pairs(video_frame_provider, max_cycles_for_pairs
                 # cycle_distance_a = frame_a - contracted_a
                 # cycle_distance_a = cycle_distance_a if cycle_distance_a >= 0 else cycle_distance_a + hb_freq_a
                 # cycle_progression_a = cycle_distance_a / hb_freq_a
-                if i <= r_peaks_a[0]:
-                    previous_r_peak = 0 if r_peaks_a[0] >= hb_freq_a else round(r_peaks_a[0] - hb_freq_a)
-                else:
-                    previous_r_peak = int(r_peaks_a[(i - r_peaks_a[np.where(i - r_peaks_a > 0)[0]]).argmin()])
-                if i > r_peaks_a[-1]:
-                    next_r_peak = video_a_frame_count if video_a_frame_count - r_peaks_a[-1] >= hb_freq_a else r_peaks_a[-1] + hb_freq_a
-                else:
-                    for r_peak in r_peaks_a:
-                        if r_peak >= i:
-                            next_r_peak = int(r_peak)
-                            break
-                cycle_progression_a = (i - previous_r_peak) / (next_r_peak - previous_r_peak)
+                cycle_progression_a = get_cycle_progression(i, r_peaks_a, video_a_frame_count)
 
                 for j in range(video_b_frame_count):
                     # Compute cycle progression for frame j of video b
@@ -597,18 +593,7 @@ def calc_similarity_between_all_pairs(video_frame_provider, max_cycles_for_pairs
                     # cycle_distance_b = frame_b - contracted_b
                     # cycle_distance_b = cycle_distance_b if cycle_distance_b >= 0 else cycle_distance_b + hb_freq_b
                     # cycle_progression_b = cycle_distance_b / hb_freq_b
-                    if j <= r_peaks_b[0]:
-                        previous_r_peak = 0 if r_peaks_b[0] >= hb_freq_b else round(r_peaks_b[0] - hb_freq_b)
-                    else:
-                        previous_r_peak = int(r_peaks_b[(j - r_peaks_b[np.where(j - r_peaks_b > 0)[0]]).argmin()])
-                    if j > r_peaks_b[-1]:
-                        next_r_peak = video_b_frame_count if video_b_frame_count - r_peaks_b[-1] >= hb_freq_b else r_peaks_b[-1] + hb_freq_b
-                    else:
-                        for r_peak in r_peaks_b:
-                            if r_peak >= j:
-                                next_r_peak = int(r_peak)
-                                break
-                    cycle_progression_b = (j - previous_r_peak) / (next_r_peak - previous_r_peak)
+                    cycle_progression_b = get_cycle_progression(j, r_peaks_b, video_b_frame_count)
 
                     # Compute similarity of the pair
                     similarity = abs(cycle_progression_a - cycle_progression_b)
@@ -618,9 +603,9 @@ def calc_similarity_between_all_pairs(video_frame_provider, max_cycles_for_pairs
                     if max_cycles_for_pairs > 0 and video_a_id == video_b_id:
                         video_frame_pair_masks[i, j] = 1 if abs(i - j) <= hb_freq_a * max_cycles_for_pairs else 0
 
-            plt.imshow(video_frame_pair_values)
-            plt.title(f"Similarity matrix for videos {video_a_id} and {video_b_id}")
-            plt.show()
+            # plt.imshow(video_frame_pair_values)
+            # plt.title(f"Similarity matrix for videos {video_a_id} and {video_b_id}")
+            # plt.show()
             frame_pair_values.append(video_frame_pair_values)
             frame_pair_masks.append(video_frame_pair_masks)
 
@@ -628,6 +613,24 @@ def calc_similarity_between_all_pairs(video_frame_provider, max_cycles_for_pairs
         all_frame_pair_masks.append(frame_pair_masks)
 
     return all_frame_pair_values, all_frame_pair_masks
+
+
+def get_cycle_progression(frame, r_peaks, video_frame_count):
+    if frame <= r_peaks[0]:
+        first_diff = r_peaks[1] - r_peaks[0]
+        previous_r_peak = 0 if r_peaks[0] >= first_diff else r_peaks[0] - first_diff
+    else:
+        previous_r_peak = r_peaks[(frame - r_peaks[np.where(frame - r_peaks > 0)[0]]).argmin()]
+    if frame > r_peaks[-1]:
+        last_diff = r_peaks[-1] - r_peaks[-2]
+        next_r_peak = video_frame_count if video_frame_count - r_peaks[-1] >= last_diff else r_peaks[-1] + last_diff
+    else:
+        for r_peak in r_peaks:
+            if r_peak >= frame:
+                next_r_peak = r_peak
+                break
+    cycle_progression = (frame - previous_r_peak) / (next_r_peak - previous_r_peak)
+    return cycle_progression
 
 
 def get_triplets_parameters(path, path_to_ignore):
@@ -695,7 +698,7 @@ def show_superimposed_frames(sequences, i, j, real_frame_indices, video_name):
 if __name__ == '__main__':
     # training_path = r'C:\Users\root\Data\Angiographie'
     # validation_path = r'C:\Users\root\Data\Angiographie\KR-11'
-    training_path = r'C:\Users\root\Data\Angiographie\P20'
+    training_path = r'C:\Users\root\Data\Angiographie\P28'
     validation_path = None
 
     # # Multisiamese

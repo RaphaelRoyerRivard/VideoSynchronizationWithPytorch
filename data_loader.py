@@ -134,7 +134,6 @@ def get_all_valid_frames_in_paths(base_paths, paths_to_ignore, img_size=224):
             if len(valid_indices) > 0 and valid_indices[-1] + 1 < len(r_peaks):
                 valid_indices = np.append(valid_indices, valid_indices[-1] + 1)
             r_peaks = r_peaks[valid_indices]
-            print(first_frame, last_frame, r_peaks + first_frame)
             # all_valid_frames.append((valid_frames, freq, contracted))
             # print(len(valid_frames), f"valid frames [{first_frame}, {last_frame}] @{freq} and contracted at index {contracted}, in", path)
             all_valid_frames.append((valid_frames, r_peaks))

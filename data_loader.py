@@ -602,7 +602,7 @@ def calc_similarity_between_all_pairs(video_frame_provider, max_cycles_for_pairs
                     if max_cycles_for_pairs > 0 and video_a_id == video_b_id:
                         video_frame_pair_masks[i, j] = 1 if abs(i - j) <= hb_freq_a * max_cycles_for_pairs else 0
 
-            # plt.imshow(video_frame_pair_values)
+            # plt.imshow(1 - video_frame_pair_values)
             # plt.title(f"Similarity matrix for videos {video_a_id} and {video_b_id}")
             # plt.show()
             frame_pair_values.append(video_frame_pair_values)

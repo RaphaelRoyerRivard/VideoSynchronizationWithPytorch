@@ -153,11 +153,19 @@ def load_best_model(save_path, model):
     test_folder_path = save_path
     # Find latest model weights in folder
     latest_epoch = -1
+    weights_files = []
     for file in os.listdir(test_folder_path):
         if ".pth" in file:
             epoch = int(file.split("_")[-1].split(".")[0])
+            weights_files.append((file, epoch))
             if epoch > latest_epoch:
                 latest_epoch = epoch
+
+    # Delete old model weights
+    for weights_file in weights_files:
+        if weights_file[1] != latest_epoch:
+            os.remove(test_folder_path + "\\" + weights_file[0])
+
     load_state_path = test_folder_path + fr"\training_state_{latest_epoch}.pth"
 
     print(load_state_path)

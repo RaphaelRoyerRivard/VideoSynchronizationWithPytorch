@@ -123,8 +123,8 @@ def get_all_valid_frames_in_paths(base_paths, paths_to_ignore, img_size=224):
                     valid_frames.append((frame_id, img))
             valid_frames.sort()
             valid_frames = [x[1] for x in valid_frames]
-            r_peaks = np.load(path + "\\" + r_peaks_file_name)
-            r_peaks = r_peaks * frame_count
+            all_r_peaks = np.load(path + "\\" + r_peaks_file_name)
+            r_peaks = all_r_peaks * frame_count
             r_peaks = r_peaks - first_frame
             valid_indices = np.where(r_peaks > 0)[0]
             if len(valid_indices) > 0 and valid_indices[0] > 0:
@@ -137,7 +137,7 @@ def get_all_valid_frames_in_paths(base_paths, paths_to_ignore, img_size=224):
             # all_valid_frames.append((valid_frames, freq, contracted))
             # print(len(valid_frames), f"valid frames [{first_frame}, {last_frame}] @{freq} and contracted at index {contracted}, in", path)
             all_valid_frames.append((valid_frames, r_peaks))
-            print(len(valid_frames), f"valid frames [{first_frame}, {last_frame}] with {len(r_peaks)} R-peaks, in", path)
+            print(f"{len(valid_frames)}/{frame_count} valid frames [{first_frame}, {last_frame}] with {len(r_peaks)} R-peaks ({len(all_r_peaks)} total), in", path)
     return all_valid_frames, video_names
 
 

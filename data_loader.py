@@ -56,6 +56,7 @@ class VideoFrameProvider(object):
 
 def get_image_size_from_model_type(model_type):
     image_size = {
+        "resnet50": 224,
         "mobilenet": 224,
         "efficientnet-b0": 224,
         "efficientnet-b1": 240,
@@ -550,6 +551,11 @@ class AngioSequenceTestDataset(Dataset):
         index = self.names.index(video_name)
         self.video_frame_provider.select_video(index)
         return self.video_frame_provider.get_current_video_heartbeat_frequency()
+
+    def get_r_peaks(self, video_name):
+        index = self.names.index(video_name)
+        self.video_frame_provider.select_video(index)
+        return self.video_frame_provider.get_current_video_r_peaks()
 
 
 def calc_similarity_between_all_pairs(video_frame_provider, max_cycles_for_pairs=0.):

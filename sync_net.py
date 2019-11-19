@@ -299,6 +299,8 @@ def get_fc_weights(model):
         fc = model.classifier
     elif hasattr(model, '_fc'):
         fc = model._fc
+    elif hasattr(model, 'fc'):
+        fc = model.fc
     if type(fc) == nn.modules.container.Sequential:
         return list(fc.modules())[-1].weight
     return fc.weight

@@ -26,7 +26,7 @@ from utils import pathfinding
 cuda = torch.cuda.is_available()
 
 random_parameters = {
-    "model_type": ["mobilenet", "efficientnet-b0", "efficientnet-b1"],  # "efficientnet-b2", "efficientnet-b3", "efficientnet-b4", "efficientnet-b5", "efficientnet-b6", "efficientnet-b7"],
+    "model_type": ["resnet50"],  # "mobilenet", "efficientnet-b0", "efficientnet-b1"],  # "efficientnet-b2", "efficientnet-b3", "efficientnet-b4", "efficientnet-b5", "efficientnet-b6", "efficientnet-b7"],
     "lr": (1e-3, 1e-5),
     "fc": [4, 8, 16, 32, 64, 128, 256],
     "batch_size": [8, 16, 32],
@@ -46,6 +46,7 @@ random_parameters = {
 
 def get_max_batch_size_for_model_type(model_type):
     max_batch_size = {
+        "resnet50": 32,
         "mobilenet": 32,
         "efficientnet-b0": 24,
         "efficientnet-b1": 12,
@@ -94,7 +95,12 @@ def generate_config(save_path):
 
 def setup(config):
     torch.cuda.set_device(0)
-    embedding_net = models.mobilenet_v2(pretrained=True) if config["model_type"] == "mobilenet" else EfficientNet.from_pretrained(config["model_type"])
+    if config["model_type"] == "mobilenet":
+        embedding_net = models.mobilenet_v2(pretrained=True)
+    elif config["model_type"] == "resnet50":
+        embedding_net = models.resnet50(pretrained=True)
+    else:
+        embedding_net = EfficientNet.from_pretrained(config["model_type"])
     if config["dropout"]:
         replace_last_layer(embedding_net, config["fc"], dropout=config["dropout_rate"])
     else:

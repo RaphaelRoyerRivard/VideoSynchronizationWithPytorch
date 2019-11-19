@@ -96,7 +96,7 @@ class Node:
 
 
 def pathfinding(matrix, symmetrical, starting_points=None, reverse=False):
-    MAX_CONSECUTIVE_STEPS = 3
+    MAX_CONSECUTIVE_STEPS = 3  # 0 to disable the limit
     # print("Matrix shape", matrix.shape)
 
     if starting_points is None:
@@ -136,7 +136,7 @@ def pathfinding(matrix, symmetrical, starting_points=None, reverse=False):
                     while previous_node is not None and previous_node.direction == consecutive_direction and consecutive_steps < MAX_CONSECUTIVE_STEPS:
                         previous_node = current_node.parent
                         consecutive_steps += 1
-                if consecutive_steps < MAX_CONSECUTIVE_STEPS:
+                if MAX_CONSECUTIVE_STEPS == 0 or consecutive_steps < MAX_CONSECUTIVE_STEPS:
                     consecutive_direction = None
                 # Generate the neighbors
                 neighbors = []

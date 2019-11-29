@@ -26,7 +26,7 @@ from utils import pathfinding
 cuda = torch.cuda.is_available()
 
 random_parameters = {
-    "model_type": ["resnet50"],  # "mobilenet", "efficientnet-b0", "efficientnet-b1"],  # "efficientnet-b2", "efficientnet-b3", "efficientnet-b4", "efficientnet-b5", "efficientnet-b6", "efficientnet-b7"],
+    "model_type": ["resnet50", "mobilenet", "efficientnet-b0", "efficientnet-b1"],  # "efficientnet-b2", "efficientnet-b3", "efficientnet-b4", "efficientnet-b5", "efficientnet-b6", "efficientnet-b7"],
     "lr": (1e-3, 1e-5),
     "fc": [4, 8, 16, 32, 64, 128, 256],
     "batch_size": [8, 16, 32],
@@ -138,13 +138,20 @@ def load_training_set(config):
         r'C:\Users\root\Data\Angiographie\P28',  # 13 sequences
         r'C:\Users\root\Data\Angiographie\P26'  # 10 sequences
     ]
+    test_paths = [
+        r'C:\Users\root\Data\Angiographie\G3',  # 7 sequences
+        r'C:\Users\root\Data\Angiographie\P21',  # 10 sequences
+        r'C:\Users\root\Data\Angiographie\G14',  # 4 sequences
+        r'C:\Users\root\Data\Angiographie\MJY-9',  # 2 sequences
+        r'C:\Users\root\Data\Angiographie\KR-11'  # 7 sequences
+    ]
     max_cycles_for_pairs = config["max_cycles_for_pairs"] if config["use_max_cycles"] else 0
     sequence = 3
     batch_size = config["batch_size"]
     inter_video_pairs = config["inter_video_pairs"]
     use_data_augmentation = config["data_augmentation"]
     img_size = get_image_size_from_model_type(config["model_type"])
-    training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_paths, max_cycles_for_pairs, sequence, 1000, batch_size, inter_video_pairs, use_data_augmentation, img_size)
+    training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_paths, test_paths, max_cycles_for_pairs, sequence, 1000, batch_size, inter_video_pairs, use_data_augmentation, img_size)
     return training_set, validation_set
 
 
@@ -182,11 +189,11 @@ def load_best_model(save_path, model):
 
 def load_test_set(config):
     test_paths = [
-        r'C:\Users\root\Data\Angiographie\AC-1',  # 6 sequences
-        r'C:\Users\root\Data\Angiographie\P31',  # 6 sequences
-        r'C:\Users\root\Data\Angiographie\KC-3',  # 6 sequences
-        r'C:\Users\root\Data\Angiographie\P28',  # 13 sequences
-        r'C:\Users\root\Data\Angiographie\P26'  # 10 sequences
+        r'C:\Users\root\Data\Angiographie\G3',  # 7 sequences
+        r'C:\Users\root\Data\Angiographie\P21',  # 10 sequences
+        r'C:\Users\root\Data\Angiographie\G14',  # 4 sequences
+        r'C:\Users\root\Data\Angiographie\MJY-9',  # 2 sequences
+        r'C:\Users\root\Data\Angiographie\KR-11'  # 7 sequences
     ]
     img_size = get_image_size_from_model_type(config["model_type"])
     test_set = get_test_set(test_paths, img_size)

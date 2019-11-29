@@ -26,7 +26,7 @@ class VideoFrameProvider(object):
         return len(self._get_videos())
 
     def select_video(self, video_id):
-        assert 0 <= video_id < self.video_count(), "'video_id' is out of bounds"
+        assert 0 <= video_id < self.video_count(), f"'video_id' {video_id} is out of bounds (max {self.video_count()-1})"
         self.current_video_id = video_id
 
     def get_current_video_name(self):
@@ -518,11 +518,14 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
 
 class AngioSequenceTestDataset(Dataset):
 
-    def __init__(self, paths, img_size=224):
+    def __init__(self, paths, img_size=224, calc_ground_truth_matrices=True):
         self.files, self.names = get_all_valid_frames_in_paths(paths, [], img_size)
         self.video_frame_provider = VideoFrameProvider(images=self.files, names=self.names)
         self.sequence_length = 3
-        self.frame_pair_values, _ = calc_similarity_between_all_pairs(self.video_frame_provider)
+        if calc_ground_truth_matrices:
+            self.frame_pair_values, _ = calc_similarity_between_all_pairs(self.video_frame_provider)
+        else:
+            self.frame_pair_values = None
 
     def __len__(self):
         return self.video_frame_provider.video_count()
@@ -610,6 +613,7 @@ def calc_similarity_between_all_pairs(video_frame_provider, max_cycles_for_pairs
 
             # plt.imshow(1 - video_frame_pair_values)
             # plt.title(f"Similarity matrix for videos {video_a_id} and {video_b_id}")
+            # plt.colorbar()
             # plt.show()
             frame_pair_values.append(video_frame_pair_values)
             frame_pair_masks.append(video_frame_pair_masks)
@@ -652,10 +656,11 @@ def get_multisiamese_datasets(training_path, validation_path, epoch_size, batch_
     return training_set, validation_set
 
 
-def get_soft_multisiamese_datasets(training_paths, validation_paths, max_cycles_for_pairs, sequence, epoch_size, batch_size, inter_video_pairs, use_data_augmentation, img_size=224):
+def get_soft_multisiamese_datasets(training_paths, validation_paths, test_paths, max_cycles_for_pairs, sequence, epoch_size, batch_size, inter_video_pairs, use_data_augmentation, img_size=224):
     training_paths = [training_paths] if not type(training_paths) == list else training_paths
     validation_paths = [validation_paths] if not type(validation_paths) == list else validation_paths
-    training_set = AngioSequenceSoftMultiSiameseDataset(training_paths, validation_paths, sequence, max_cycles_for_pairs, epoch_size, batch_size, inter_video_pairs, use_data_augmentation, img_size=img_size)
+    test_paths = [test_paths] if not type(test_paths) == list else test_paths
+    training_set = AngioSequenceSoftMultiSiameseDataset(training_paths, validation_paths + test_paths, sequence, max_cycles_for_pairs, epoch_size, batch_size, inter_video_pairs, use_data_augmentation, img_size=img_size)
     validation_set = None if validation_paths[0] is None else AngioSequenceSoftMultiSiameseDataset(validation_paths, [], sequence, max_cycles_for_pairs, round(epoch_size / 5), batch_size, inter_video_pairs, use_data_augmentation=False, img_size=img_size)
     return training_set, validation_set
 
@@ -668,9 +673,9 @@ def get_datasets(training_path, validation_path):
     return training_set, validation_set
 
 
-def get_test_set(test_paths, img_size=224):
+def get_test_set(test_paths, img_size=224, calc_ground_truth_matrices=True):
     test_paths = [test_paths] if not type(test_paths) == list else test_paths
-    return AngioSequenceTestDataset(test_paths, img_size)
+    return AngioSequenceTestDataset(test_paths, img_size, calc_ground_truth_matrices)
 
 
 def get_frame_indices_of_most_distant_similar_pair_with_randomness(similarity_matrix, masks, real_frame_indices):
@@ -705,6 +710,7 @@ if __name__ == '__main__':
     # validation_path = r'C:\Users\root\Data\Angiographie\KR-11'
     training_path = r'C:\Users\root\Data\Angiographie\P28'
     validation_path = None
+    test_path = None
 
     # # Multisiamese
     # training_set, validation_set = get_multisiamese_datasets(training_path, validation_path, 1, 10)
@@ -719,21 +725,28 @@ if __name__ == '__main__':
     #     print("negative_matrix", negative_matrix)
 
     # Soft Multisiamese
-    training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_path, max_cycles_for_pairs=0, sequence=3, epoch_size=1000, batch_size=64, inter_video_pairs=True, use_data_augmentation=True)
-    training_dataloader = DataLoader(training_set, batch_size=1, shuffle=False, num_workers=0)
-    for i_batch, data in enumerate(training_dataloader):
-        print(type(data))
-        sequences = data[0][0]
-        similarity_matrix = data[1][0][0]
-        masks = data[1][1][0]
-        frame_indices = data[2]["frame_indices"][0]
-        video_name = data[2]["video_name"][0]
-        print("sequences", sequences.shape)
-        print("similarity_matrix", similarity_matrix.shape)
-        print("masks", masks.shape)
-        print(frame_indices)
-        i, j = get_frame_indices_of_most_distant_similar_pair_with_randomness(similarity_matrix, masks, frame_indices)
-        show_superimposed_frames(sequences, i, j, frame_indices, video_name)
+    test_paths = [
+        r'C:\Users\root\Data\Angiographie\MJY-9',  # 2 sequences
+    ]
+    test_set = get_test_set(test_paths, 240)
+    test_loader = DataLoader(test_set, batch_size=1, shuffle=False, num_workers=1)
+    for batch_index, sequences in enumerate(test_loader):
+        print(batch_index)
+    # training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_path, test_path, max_cycles_for_pairs=0, sequence=3, epoch_size=1000, batch_size=64, inter_video_pairs=True, use_data_augmentation=True)
+    # training_dataloader = DataLoader(training_set, batch_size=1, shuffle=False, num_workers=0)
+    # for i_batch, data in enumerate(training_dataloader):
+    #     print(type(data))
+    #     sequences = data[0][0]
+    #     similarity_matrix = data[1][0][0]
+    #     masks = data[1][1][0]
+    #     frame_indices = data[2]["frame_indices"][0]
+    #     video_name = data[2]["video_name"][0]
+    #     print("sequences", sequences.shape)
+    #     print("similarity_matrix", similarity_matrix.shape)
+    #     print("masks", masks.shape)
+    #     print(frame_indices)
+    #     i, j = get_frame_indices_of_most_distant_similar_pair_with_randomness(similarity_matrix, masks, frame_indices)
+    #     show_superimposed_frames(sequences, i, j, frame_indices, video_name)
 
     # # Optical Flow tests using Soft Multisiamese
     # max_cycle_for_pairs = 0

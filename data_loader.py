@@ -572,16 +572,12 @@ def calc_similarity_between_all_pairs(video_frame_provider, max_cycles_for_pairs
         video_frame_provider.select_video(video_a_id)
         video_a_frame_count = video_frame_provider.get_current_video_frame_count()
         hb_freq_a = video_frame_provider.get_current_video_heartbeat_frequency()
-        # contracted_frame_a = video_frame_provider.get_current_video_contracted_frame()
-        # contracted_a = contracted_frame_a % hb_freq_a
         r_peaks_a = video_frame_provider.get_current_video_r_peaks()
         # Loop through all videos (even the same one)
         for video_b_id in range(video_a_id, video_count):
             video_frame_provider.select_video(video_b_id)
             video_b_frame_count = video_frame_provider.get_current_video_frame_count()
             hb_freq_b = video_frame_provider.get_current_video_heartbeat_frequency()
-            # contracted_frame_b = video_frame_provider.get_current_video_contracted_frame()
-            # contracted_b = contracted_frame_b % hb_freq_b
             r_peaks_b = video_frame_provider.get_current_video_r_peaks()
             video_frame_pair_values = np.zeros((video_a_frame_count, video_b_frame_count))
             video_frame_pair_masks = np.ones((video_a_frame_count, video_b_frame_count))
@@ -589,18 +585,10 @@ def calc_similarity_between_all_pairs(video_frame_provider, max_cycles_for_pairs
             # Loop on each frame pair
             for i in range(video_a_frame_count):
                 # Compute cycle progression for frame i of video a
-                # frame_a = i % hb_freq_a
-                # cycle_distance_a = frame_a - contracted_a
-                # cycle_distance_a = cycle_distance_a if cycle_distance_a >= 0 else cycle_distance_a + hb_freq_a
-                # cycle_progression_a = cycle_distance_a / hb_freq_a
                 cycle_progression_a = get_cycle_progression(i, r_peaks_a, video_a_frame_count)
 
                 for j in range(video_b_frame_count):
                     # Compute cycle progression for frame j of video b
-                    # frame_b = j % hb_freq_b
-                    # cycle_distance_b = frame_b - contracted_b
-                    # cycle_distance_b = cycle_distance_b if cycle_distance_b >= 0 else cycle_distance_b + hb_freq_b
-                    # cycle_progression_b = cycle_distance_b / hb_freq_b
                     cycle_progression_b = get_cycle_progression(j, r_peaks_b, video_b_frame_count)
 
                     # Compute similarity of the pair

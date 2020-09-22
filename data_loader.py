@@ -71,6 +71,7 @@ def get_image_size_from_model_type(model_type):
 
 
 def get_all_valid_frames_in_paths(base_paths, paths_to_ignore, img_size=224):
+    frames_only = []
     all_valid_frames = []
     video_names = []
     relevant_frames_file_name = "relevant_frames.txt"
@@ -122,6 +123,7 @@ def get_all_valid_frames_in_paths(base_paths, paths_to_ignore, img_size=224):
                     img = img.astype(np.float32)
                     img /= 255
                     valid_frames.append((frame_id, img))
+                    frames_only.append(img)
             valid_frames.sort()
             valid_frames = [x[1] for x in valid_frames]
             all_r_peaks = np.load(path + "\\" + r_peaks_file_name)
@@ -139,7 +141,20 @@ def get_all_valid_frames_in_paths(base_paths, paths_to_ignore, img_size=224):
             # print(len(valid_frames), f"valid frames [{first_frame}, {last_frame}] @{freq} and contracted at index {contracted}, in", path)
             all_valid_frames.append((valid_frames, r_peaks))
             print(f"{len(valid_frames)}/{frame_count} valid frames [{first_frame}, {last_frame}] with {len(r_peaks)} R-peaks ({len(all_r_peaks)} total), in", path)
-    return all_valid_frames, video_names
+    frames_only = np.array(frames_only)
+    print(frames_only.shape)
+    print("Original", frames_only.mean(), frames_only.std(), frames_only.min(), frames_only.max())
+    # frames_only -= frames_only.mean()
+    # print("Centered", frames_only.mean(), frames_only.std(), frames_only.min(), frames_only.max())
+    # frames_only /= frames_only.std()
+    # print("Standardized", frames_only.mean(), frames_only.std(), frames_only.min(), frames_only.max())
+    # frames_only *= 0.229
+    # print("Adjusted std", frames_only.mean(), frames_only.std(), frames_only.min(), frames_only.max())
+    # frames_only += 0.485
+    # print("Adjusted mean", frames_only.mean(), frames_only.std(), frames_only.min(), frames_only.max())
+    # frames_only = (frames_only - frames_only.min()) / (frames_only.max() - frames_only.min())
+    # print("Normalized", frames_only.mean(), frames_only.std(), frames_only.min(), frames_only.max())
+    return all_valid_frames, video_names, frames_only.mean(), frames_only.std()
 
 
 class TripletSelector:
@@ -166,7 +181,7 @@ class AngioSequenceTripletDataset(Dataset):
         Args:
             path (str): path in which we can find sequences of images
         """
-        self.files, self.names = get_all_valid_frames_in_paths(path, path_to_ignore)
+        self.files, self.names, self.data_mean, self.data_std = get_all_valid_frames_in_paths(path, path_to_ignore)
         self.video_frame_provider = VideoFrameProvider(images=self.files, names=self.names)
         self.sequence = sequence
         self._calc_all_triplets()
@@ -227,7 +242,7 @@ class AngioSequenceMultiSiameseDataset(Dataset):
         Args:
             path (str): path in which we can find sequences of images
         """
-        self.files, self.names = get_all_valid_frames_in_paths(path, path_to_ignore)
+        self.files, self.names, self.data_mean, self.data_std = get_all_valid_frames_in_paths(path, path_to_ignore)
         self.video_frame_provider = VideoFrameProvider(images=self.files, names=self.names)
         self.sequence = sequence
         self.epoch_size = epoch_size
@@ -325,7 +340,7 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
     """
     Yield matrices of similarity between pairs
     """
-    def __init__(self, paths, path_to_ignores, sequence, max_cycles_for_pairs, epoch_size, batch_size, inter_video_pairs, use_data_augmentation, img_size=224):
+    def __init__(self, paths, path_to_ignores, sequence, max_cycles_for_pairs, epoch_size, batch_size, inter_video_pairs, use_data_augmentation, use_data_normalization, img_size=224):
         """
         Sample most trivial training data for phase 0 (intra-video sampling of consecutive frames)
 
@@ -338,7 +353,7 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
             batch_size (int): Size of the sampled matrices
             inter_video_pairs (bool): True to pair the frames of different videos together, False to limit to only intra-video pairs
         """
-        self.files, self.names = get_all_valid_frames_in_paths(paths, path_to_ignores, img_size)
+        self.files, self.names, self.data_mean, self.data_std = get_all_valid_frames_in_paths(paths, path_to_ignores, img_size)
         self.video_frame_provider = VideoFrameProvider(images=self.files, names=self.names)
         self.sequence = sequence
         self.max_cycles_for_pairs = max_cycles_for_pairs
@@ -346,6 +361,7 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
         self.batch_size = batch_size
         self.inter_video_pairs = inter_video_pairs
         self.use_data_augmentation = use_data_augmentation
+        self.use_data_normalization = use_data_normalization
         if use_data_augmentation:
             self.data_augmentation = transforms.Compose([
                 transforms.ToPILImage(),
@@ -354,6 +370,11 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
                 transforms.RandomAffine(degrees=10, translate=(0.1, 0.1), fillcolor=0)
             ])
         self.frame_pair_values, self.frame_pair_masks = calc_similarity_between_all_pairs(self.video_frame_provider, self.max_cycles_for_pairs)
+        # if use_data_normalization:
+        #     self.normalize = transforms.Compose([
+        #         transforms.ToPILImage(),
+        #         transforms.ToTensor(),
+        #         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
 
     def __len__(self):
         return self.epoch_size
@@ -443,6 +464,12 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
                         # plt.show()
                         frame_sequence = np.moveaxis(frame_sequence, 2, 0)
 
+                    # Apply data normalization
+                    if self.use_data_normalization:
+                        frame_sequence -= self.data_mean
+                        frame_sequence /= self.data_std
+                        # frame_sequence = self.normalize(frame_sequence)
+
                     frame_sequences_a.append(frame_sequence)
 
                 self.video_frame_provider.select_video(video_id_b)
@@ -476,12 +503,18 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
                         frame_sequence = np.moveaxis(frame_sequence, 2, 0)
                         frame_sequence = frame_sequence.astype(np.float32) / 255
 
+                    # Apply data normalization
+                    if self.use_data_normalization:
+                        frame_sequence -= self.data_mean
+                        frame_sequence /= self.data_std
+                        # frame_sequence = self.normalize(frame_sequence)
+
                     frame_sequences_b.append(frame_sequence)
 
                 appended_frame_sequences = np.append(np.array(frame_sequences_a), np.array(frame_sequences_b), axis=0)
                 yield appended_frame_sequences, (similarity_matrix, masks), {"frame_indices_a": frame_indices_a, "frame_indices_b": frame_indices_b, "video_name_a": video_name, "video_name_b": video_name_b}
 
-            else:
+            else:  # No inter-video pairs
                 # if there are more frames in the video than the size of our batch, we can sample from it
                 if possible_frames_count > self.batch_size:
                     # Randomly select frames in our video based on the batch size
@@ -511,15 +544,43 @@ class AngioSequenceSoftMultiSiameseDataset(Dataset):
                         frame_sequence.append(frame_sequence[0])
                         frame_sequence.append(frame_sequence[0])
 
-                    frame_sequences.append(frame_sequence)
+                    # Apply data augmentation
+                    if self.use_data_augmentation:
+                        frame_sequence = np.array(frame_sequence)
+                        frame_sequence = (frame_sequence * 255).astype(np.uint8)
+                        frame_sequence = np.moveaxis(frame_sequence, 0, 2)
+                        # plt.subplot(1, 2, 1)
+                        # plt.imshow(frame_sequence)
+                        # plt.title("Before")
+                        frame_sequence = self.data_augmentation(frame_sequence)
+                        frame_sequence = np.asarray(frame_sequence)
+                        # print(frame_sequence.shape)
+                        # plt.subplot(1, 2, 2)
+                        # plt.imshow(frame_sequence)
+                        # plt.title("After")
+                        # plt.show()
+                        frame_sequence = np.moveaxis(frame_sequence, 2, 0)
+                        frame_sequence = frame_sequence.astype(np.float32) / 255
 
-                yield np.array(frame_sequences), (similarity_matrix, masks), {"frame_indices": frame_indices, "video_name": video_name}
+                    # Apply data normalization
+                    if self.use_data_normalization:
+                        frame_sequence = np.array(frame_sequence)
+                        frame_sequence -= self.data_mean
+                        frame_sequence /= self.data_std
+                        # frame_sequence = (frame_sequence * 255).astype(np.uint8)
+                        # frame_sequence = np.moveaxis(frame_sequence, 0, 2)
+                        # frame_sequence = self.normalize(frame_sequence)
+                        # frame_sequence = np.asarray(frame_sequence)
+
+                    frame_sequences.append(frame_sequence)
+                frame_sequences = np.array(frame_sequences)
+                yield frame_sequences, (similarity_matrix, masks), {"frame_indices": frame_indices, "video_name": video_name}
 
 
 class AngioSequenceTestDataset(Dataset):
 
     def __init__(self, paths, img_size=224, calc_ground_truth_matrices=True):
-        self.files, self.names = get_all_valid_frames_in_paths(paths, [], img_size)
+        self.files, self.names, self.data_mean, self.data_std = get_all_valid_frames_in_paths(paths, [], img_size)
         self.video_frame_provider = VideoFrameProvider(images=self.files, names=self.names)
         self.sequence_length = 3
         if calc_ground_truth_matrices:
@@ -644,12 +705,12 @@ def get_multisiamese_datasets(training_path, validation_path, epoch_size, batch_
     return training_set, validation_set
 
 
-def get_soft_multisiamese_datasets(training_paths, validation_paths, test_paths, max_cycles_for_pairs, sequence, epoch_size, batch_size, inter_video_pairs, use_data_augmentation, img_size=224):
+def get_soft_multisiamese_datasets(training_paths, validation_paths, test_paths, max_cycles_for_pairs, sequence, epoch_size, batch_size, inter_video_pairs, use_data_augmentation, use_data_normalization, img_size=224):
     training_paths = [training_paths] if not type(training_paths) == list else training_paths
     validation_paths = [validation_paths] if not type(validation_paths) == list else validation_paths
     test_paths = [test_paths] if not type(test_paths) == list else test_paths
-    training_set = AngioSequenceSoftMultiSiameseDataset(training_paths, validation_paths + test_paths, sequence, max_cycles_for_pairs, epoch_size, batch_size, inter_video_pairs, use_data_augmentation, img_size=img_size)
-    validation_set = None if validation_paths[0] is None else AngioSequenceSoftMultiSiameseDataset(validation_paths, [], sequence, max_cycles_for_pairs, round(epoch_size / 5), batch_size, inter_video_pairs, use_data_augmentation=False, img_size=img_size)
+    training_set = AngioSequenceSoftMultiSiameseDataset(training_paths, validation_paths + test_paths, sequence, max_cycles_for_pairs, epoch_size, batch_size, inter_video_pairs, use_data_augmentation, use_data_normalization, img_size=img_size)
+    validation_set = None if len(validation_paths) == 0 or validation_paths[0] is None else AngioSequenceSoftMultiSiameseDataset(validation_paths, [], sequence, max_cycles_for_pairs, round(epoch_size / 5), batch_size, inter_video_pairs, use_data_augmentation=False, use_data_normalization=use_data_normalization, img_size=img_size)
     return training_set, validation_set
 
 

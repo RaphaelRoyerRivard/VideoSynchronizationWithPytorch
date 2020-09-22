@@ -40,7 +40,8 @@ random_parameters = {
     "use_max_cycles": [False, True],
     "max_cycles_for_pairs": (1.0, 5.0),
     "inter_video_pairs": [False, True],
-    "data_augmentation": [False, True]
+    "data_augmentation": [False, True],
+    "dataset_normalization": [False, True]
 }
 
 
@@ -132,27 +133,44 @@ def setup(config):
 def load_training_set(config):
     training_path = r'C:\Users\root\Data\Angiographie'
     validation_paths = [
-        r'C:\Users\root\Data\Angiographie\AC-1',  # 6 sequences
-        r'C:\Users\root\Data\Angiographie\P31',  # 6 sequences
-        r'C:\Users\root\Data\Angiographie\KC-3',  # 6 sequences
-        r'C:\Users\root\Data\Angiographie\P28',  # 13 sequences
-        r'C:\Users\root\Data\Angiographie\P26'  # 10 sequences
+        fr'{training_path}\AC-1',  # 6 sequences
+        fr'{training_path}\P31',  # 6 sequences
+        fr'{training_path}\KC-3',  # 6 sequences
+        fr'{training_path}\P28',  # 12 sequences
+        fr'{training_path}\P26',  # 10 sequences
+        fr'{training_path}\pt006',  # 9 sequences
+        fr'{training_path}\pt026',  # 8 sequences
+        fr'{training_path}\pt036',  # 6 sequences
+        fr'{training_path}\pt041',  # 9 sequences
+        fr'{training_path}\pt047'  # 13 sequences
     ]
     test_paths = [
-        r'C:\Users\root\Data\Angiographie\G3',  # 7 sequences
-        r'C:\Users\root\Data\Angiographie\P21',  # 10 sequences
-        r'C:\Users\root\Data\Angiographie\G14',  # 4 sequences
-        r'C:\Users\root\Data\Angiographie\MJY-9',  # 2 sequences
-        r'C:\Users\root\Data\Angiographie\KR-11'  # 7 sequences
+        fr'{training_path}\G3',  # 7 sequences
+        fr'{training_path}\G14',  # 13 sequences
+        fr'{training_path}\P21',  # 10 sequences
+        fr'{training_path}\P27',  # 8 sequences
+        fr'{training_path}\MJY-9',  # 2 sequences
+        fr'{training_path}\KR-11',  # 7 sequences
+        fr'{training_path}\pt004',  # 6 sequences
+        fr'{training_path}\pt010',  # 11 sequences
+        fr'{training_path}\pt011',  # 2 sequences
+        fr'{training_path}\pt028',  # 11 sequences
+        fr'{training_path}\pt037',  # 1 sequence
     ]
     max_cycles_for_pairs = config["max_cycles_for_pairs"] if config["use_max_cycles"] else 0
     sequence = 3
     batch_size = config["batch_size"]
     inter_video_pairs = config["inter_video_pairs"]
     use_data_augmentation = config["data_augmentation"]
+    use_data_normalization = config["dataset_normalization"]
     img_size = get_image_size_from_model_type(config["model_type"])
-    training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_paths, test_paths, max_cycles_for_pairs, sequence, 1000, batch_size, inter_video_pairs, use_data_augmentation, img_size)
-    return training_set, validation_set
+    training_set, validation_set = get_soft_multisiamese_datasets(training_path, validation_paths, test_paths, max_cycles_for_pairs, sequence, 1000, batch_size, inter_video_pairs, use_data_augmentation, use_data_normalization, img_size)
+    normalization_parameters = None if not use_data_normalization else {
+        "mean": training_set.data_mean,
+        "std": training_set.data_std,
+        # "normalize": training_set.normalize
+    }
+    return training_set, validation_set, normalization_parameters
 
 
 def train(training_set, validation_set, model, loss_fn, optimizer, scheduler, n_epochs, log_interval, start_epoch, save_path):
@@ -201,7 +219,7 @@ def load_test_set(config):
     return test_set, test_loader
 
 
-def compute_matrices(test_loader, model):
+def compute_matrices(test_loader, model, normalization_parameters):
     def calc_distance_and_similarity_matrices(embeddings1, embeddings2):
         distances = []
         similarities = []
@@ -229,6 +247,10 @@ def compute_matrices(test_loader, model):
         for batch_index, sequences in enumerate(test_loader):
             name = sequences[1][0]
             sequences = sequences[0]
+            if normalization_parameters is not None:
+                sequences -= normalization_parameters["mean"]
+                sequences /= normalization_parameters["std"]
+                # sequences = normalization_parameters["normalize"](torch.from_numpy(sequences))
 
             # sequences: (batch, video_frame, channel, width, height)
             print(f"Batch {batch_index + 1}/{len(test_loader)} ({name}) with {len(sequences[0])} sequences")
@@ -300,8 +322,8 @@ def run_pathfinding(test_set, test_loader, distance_matrices, similarity_matrice
                         while node is not None:
                             pairs.append(node.point)
                             node = node.parent
-                        if len(pairs) < 10:
-                            continue
+                        # if len(pairs) < 10:
+                        #     continue
                         for point in pairs:
                             current_scores.append(ground_truth[point])
                             path_scores.append((point, ground_truth[point]))
@@ -343,7 +365,7 @@ def find_best_path(all_paths, test_set, save_path):
                     dist = np.sqrt((path[0][0][0] - path[-1][0][0]) ** 2 + (path[0][0][1] - path[-1][0][1]) ** 2)
                     if dist >= max_length * 0.9:
                         straightness = dist / (len(path) - 1) / np.sqrt(2)
-                        if straightness > max_straightness:
+                        if straightness >= max_straightness:
                             max_straightness = straightness
                             straightest_path = path_index
 
@@ -409,11 +431,11 @@ if __name__ == '__main__':
     save_path = generate_xp_folder()
     config = generate_config(save_path)
     model, loss_fn, optimizer, scheduler, n_epochs, log_interval, start_epoch = setup(config)
-    training_set, validation_set = load_training_set(config)
+    training_set, validation_set, normalization_parameters = load_training_set(config)
     train(training_set, validation_set, model, loss_fn, optimizer, scheduler, n_epochs, log_interval, start_epoch, save_path)
     load_best_model(save_path, model)
     test_set, test_loader = load_test_set(config)
-    distance_matrices, similarity_matrices, combination_matrices = compute_matrices(test_loader, model)
+    distance_matrices, similarity_matrices, combination_matrices = compute_matrices(test_loader, model, normalization_parameters)
     all_distance_scores, all_similarity_scores, all_combination_scores, ordered_distance_scores, all_paths = run_pathfinding(test_set, test_loader, distance_matrices, similarity_matrices, combination_matrices)
     find_best_path(all_paths, test_set, save_path)
 

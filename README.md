@@ -1,6 +1,8 @@
 # VideoSynchronizationWithPytorch
 Code of the paper 'End-To-End Deep Learning Model for Cardiac Cycle Synchronization from Multi-View Angiographic Sequences' (presented at EMBC 2020) using Pytorch.
 
+My python environment : see `torch_pip_list.txt`
+
 ## Evaluate a model
 1. Open a Jupyter Notebook server with the command `jupyter notebook`.
 2. Open the `main.ipynb` notebook within the Jupyter Notebook server.
